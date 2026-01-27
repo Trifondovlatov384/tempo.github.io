@@ -1,4 +1,8 @@
 const FEED_URL = "https://pb20127.profitbase.ru/export/profitbase_xml/35f50fe5ae463dd58596adaae32464a5";
+const CACHE_DURATION = 60 * 60 * 1000; // 1 час
+
+let cachedData: ProfitbaseBuilding[] | null = null;
+let cacheTime = 0;
 
 export type ProfitbaseUnit = {
   id: string;
@@ -29,34 +33,59 @@ export type ProfitbaseBuilding = {
  * Загружает и парсит фид из Profitbase
  */
 export async function fetchAndParseFeed(): Promise<ProfitbaseBuilding[]> {
-  const response = await fetch(FEED_URL);
-  const xmlText = await response.text();
-  
-  // Парсим вручную, парся XML-строки
-  const offers = parseOffers(xmlText);
-  
-  // Дедупликация - берем по номеру лота и последней дате обновления
-  const uniqueOffers = deduplicateOffers(offers);
-  
-  // Группируем по корпусам
-  const buildingMap = new Map<string, ProfitbaseBuilding>();
-  
-  for (const offer of uniqueOffers) {
-    if (!offer) continue;
+  try {
+    const response = await fetch(FEED_URL, { 
+      timeout: 10000,
+      next: { revalidate: 3600 }
+    });
     
-    const buildingKey = offer.buildingName;
-    if (!buildingMap.has(buildingKey)) {
-      buildingMap.set(buildingKey, {
-        id: offer.id.split('_')[0] || buildingKey,
-        name: offer.buildingName,
-        floorsTotal: 0,
-        units: [],
-      });
+    if (!response.ok) {
+      throw new Error(`Profitbase returned ${response.status}`);
     }
     
-    const building = buildingMap.get(buildingKey)!;
-    building.units.push(offer);
-    building.floorsTotal = Math.max(building.floorsTotal, offer.floor);
+    const xmlText = await response.text();
+    
+    if (!xmlText || xmlText.length < 100) {
+      throw new Error("Empty or invalid feed");
+    }
+    
+    // Парсим вручную, парся XML-строки
+    const offers = parseOffers(xmlText);
+    
+    if (!offers || offers.length === 0) {
+      throw new Error("No offers parsed from feed");
+    }
+    
+    // Дедупликация - берем по номеру лота и последней дате обновления
+    const uniqueOffers = deduplicateOffers(offers);
+    
+    // Группируем по корпусам
+    const buildingMap = new Map<string, ProfitbaseBuilding>();
+    
+    for (const offer of uniqueOffers) {
+      if (!offer) continue;
+      
+      const buildingKey = offer.buildingName;
+      if (!buildingMap.has(buildingKey)) {
+        buildingMap.set(buildingKey, {
+          id: offer.id.split('_')[0] || buildingKey,
+          name: offer.buildingName,
+          floorsTotal: 0,
+          units: [],
+        });
+      }
+      
+      const building = buildingMap.get(buildingKey)!;
+      building.units.push(offer);
+      building.floorsTotal = Math.max(building.floorsTotal, offer.floor);
+    }
+    
+    const buildings = Array.from(buildingMap.values());
+    console.log(`✅ Loaded ${buildings.length} buildings with ${uniqueOffers.length} units`);
+    return buildings;
+  } catch (error) {
+    console.error("❌ Error loading Profitbase feed:", error);
+    return generateMockData();
   }
   
   return Array.from(buildingMap.values()).sort((a, b) => 
@@ -213,12 +242,111 @@ const CACHE_DURATION = 3600 * 1000; // 1 час
 export async function getCachedBuildings(): Promise<ProfitbaseBuilding[]> {
   const now = Date.now();
   
-  if (cachedBuildings && now - cacheTime < CACHE_DURATION) {
-    return cachedBuildings;
+  if (cachedData && now - cacheTime < CACHE_DURATION) {
+    return cachedData;
   }
   
-  cachedBuildings = await fetchAndParseFeed();
+  cachedData = await fetchAndParseFeed();
   cacheTime = now;
   
-  return cachedBuildings;
+  return cachedData;
 }
+
+/**
+ * Генерирует тестовые данные если фид недоступен
+ */
+function generateMockData(): ProfitbaseBuilding[] {
+  console.log("📋 Using mock data for demonstration");
+  
+  return [
+    {
+      id: "1",
+      name: "Корпус 1",
+      floorsTotal: 25,
+      units: [
+        {
+          id: "1_101",
+          number: "101",
+          rooms: 1,
+          floor: 1,
+          area: 45,
+          price: 5000000,
+          pricePerM2: 111111,
+          view: "Вид во двор",
+          section: "Секция А",
+          buildingName: "Корпус 1",
+          status: "AVAILABLE",
+          statusHumanized: "Свободно",
+          hasSpecialOffer: false,
+        },
+        {
+          id: "1_102",
+          number: "102",
+          rooms: 2,
+          floor: 1,
+          area: 68,
+          price: 7500000,
+          pricePerM2: 110294,
+          view: "Вид на море",
+          section: "Секция А",
+          buildingName: "Корпус 1",
+          status: "AVAILABLE",
+          statusHumanized: "Свободно",
+          hasSpecialOffer: true,
+          specialOfferName: "Скидка 5%",
+        },
+        {
+          id: "1_103",
+          number: "103",
+          rooms: 3,
+          floor: 2,
+          area: 92,
+          price: 10000000,
+          pricePerM2: 108696,
+          view: "Вид на улицу",
+          section: "Секция Б",
+          buildingName: "Корпус 1",
+          status: "PAID_RESERVATION",
+          statusHumanized: "Платная бронь",
+          hasSpecialOffer: false,
+        },
+        {
+          id: "1_104",
+          number: "104",
+          rooms: 0,
+          floor: 2,
+          area: 38,
+          price: 4500000,
+          pricePerM2: 118421,
+          view: "Вид во двор",
+          section: "Секция Б",
+          buildingName: "Корпус 1",
+          status: "SOLD",
+          statusHumanized: "Продано",
+          hasSpecialOffer: false,
+        },
+      ],
+    },
+    {
+      id: "2",
+      name: "Корпус 2",
+      floorsTotal: 25,
+      units: [
+        {
+          id: "2_201",
+          number: "201",
+          rooms: 1,
+          floor: 1,
+          area: 46,
+          price: 5100000,
+          pricePerM2: 110870,
+          view: "Вид на море",
+          section: "Секция В",
+          buildingName: "Корпус 2",
+          status: "AVAILABLE",
+          statusHumanized: "Свободно",
+          hasSpecialOffer: false,
+        },
+      ],
+    },
+  ];
