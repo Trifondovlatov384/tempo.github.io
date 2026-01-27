@@ -1,29 +1,19 @@
 #!/bin/bash
 
-# Tempo Nova - Deployment Script
-# Используй: bash deploy.sh на сервере
-
 set -e
 
-echo "🚀 Развертывание Tempo Nova на сервер..."
+echo "🚀 Развертывание Tempo Nova..."
 
-# Переменные
 REPO_URL="https://github.com/Trifondovlatov384/tempo.github.io.git"
 APP_DIR="/home/app/tempo-nova"
-NODE_VERSION="20"
-PORT=3000
 
-# 1. Установка зависимостей
-echo "📦 Установка зависимостей системы..."
-apt-get update
-apt-get install -y curl git nodejs npm
+echo "📦 Установка зависимостей..."
+apt-get update && apt-get install -y curl git nodejs npm nginx
 
-# 2. Создание директории приложения
-echo "📁 Создание директории приложения..."
+echo "📁 Создание директории..."
 mkdir -p $APP_DIR
 cd $APP_DIR
 
-# 3. Клонирование репозитория
 echo "📥 Клонирование репозитория..."
 if [ ! -d ".git" ]; then
   git clone $REPO_URL .
@@ -31,19 +21,19 @@ else
   git pull origin main
 fi
 
-# 4. Установка зависимостей Node.js
 echo "📚 Установка npm пакетов..."
-npm install --production=false
+npm install
 
-# 5. Сборка приложения
 echo "🔨 Сборка приложения..."
 npm run build
 
-# 6. Настройка PM2 (для запуска в фоне)
-echo "⚙️  Настройка PM2..."
+echo "📝 Создание директории логов..."
+mkdir -p logs
+
+echo "⚙️  Установка PM2..."
 npm install -g pm2
 
-# 7. Стартовый скрипт PM2
+echo "🎯 Запуск приложения..."
 cat > ecosystem.config.js << 'EOF'
 module.exports = {
   apps: [{
@@ -52,51 +42,48 @@ module.exports = {
     args: 'start',
     instances: 'max',
     exec_mode: 'cluster',
-    env: {
-      NODE_ENV: 'production',
-      PORT: 3000
-    },
+    env: { NODE_ENV: 'production', PORT: 3000 },
     error_file: './logs/error.log',
-    out_file: './logs/out.log',
-    log_date_format: 'YYYY-MM-DD HH:mm:ss Z'
+    out_file: './logs/out.log'
   }]
 };
 EOF
 
-# 8. Запуск приложения с PM2
-echo "🎯 Запуск приложения..."
+pm2 delete tempo-nova 2>/dev/null || true
 pm2 start ecosystem.config.js
 pm2 startup
 pm2 save
 
-# 9. Настройка Nginx (обратный прокси)
 echo "🌐 Настройка Nginx..."
-apt-get install -y nginx
-
-cat > /etc/nginx/sites-available/tempo-nova << 'EOF'
+cat > /etc/nginx/sites-available/tempo-nova << 'NGINX'
+upstream app { server 127.0.0.1:3000; }
 server {
-    listen 80;
-    server_name 93.189.230.214;
-
-    location / {
-        proxy_pass http://localhost:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
+  listen 80 default_server;
+  listen [::]:80 default_server;
+  
+  gzip on;
+  gzip_types text/plain text/css text/javascript application/json;
+  
+  location / {
+    proxy_pass http://app;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection upgrade;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
 }
-EOF
+NGINX
 
+rm -f /etc/nginx/sites-enabled/default
 ln -sf /etc/nginx/sites-available/tempo-nova /etc/nginx/sites-enabled/
 nginx -t
 systemctl restart nginx
+systemctl enable nginx
 
-echo "✅ Развертывание завершено!"
-echo "🎉 Приложение доступно на http://93.189.230.214"
+echo ""
+echo "✅ Готово!"
+echo "🌐 Откройте: http://93.189.230.214"
 echo "📝 Логи: pm2 logs"
-echo "🔄 Перезагрузка: pm2 restart all"
