@@ -1,6 +1,6 @@
 import { connectToDatabase } from "@/lib/mongodb";
 import { parseProfitbaseXml, convertOffersToParsedFeed } from "@/lib/profitbaseFeedParser";
-import { getCachedFeedData } from "@/lib/feedCache";
+import { getCachedFeedData, setCachedFeedData } from "@/lib/feedCache";
 import type { NextRequest } from "next/server";
 
 export async function GET(_request: NextRequest) {
@@ -104,7 +104,6 @@ export async function POST(request: NextRequest) {
     }));
 
     // Cache the parsed data
-    const { setCachedFeedData } = await import("@/lib/feedCache");
     setCachedFeedData({
       buildings,
       units: feedData.units,
