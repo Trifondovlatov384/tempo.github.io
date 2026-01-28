@@ -33,6 +33,64 @@ export type TempoComplex = {
 
 export const getTempoData = cache(async (): Promise<TempoComplex | null> => {
   try {
+    // Try to fetch from MongoDB via API first
+    try {
+      const response = await fetch("http://localhost:3000/api/units", {
+        next: { revalidate: 60 } // Revalidate every 60 seconds
+      });
+      
+      if (response.ok) {
+        const apiUnits = await response.json();
+        
+        if (apiUnits && apiUnits.length > 0) {
+          // Group units by building
+          const buildingsMap = new Map<string, any>();
+          
+          apiUnits.forEach((unit: any) => {
+            const buildingId = unit.building_id || "building-1";
+            if (!buildingsMap.has(buildingId)) {
+              buildingsMap.set(buildingId, {
+                id: buildingId,
+                name: unit.building_name || "Корпус 1",
+                floorsTotal: unit.floors_total || 25,
+                units: [],
+              });
+            }
+            
+            buildingsMap.get(buildingId).units.push({
+              id: unit._id?.toString() || `unit-${unit.number}`,
+              number: unit.number?.toString() || "0",
+              rooms: unit.rooms || 0,
+              floor: unit.floor || 1,
+              price: unit.price || 0,
+              area: unit.area || 0,
+              pricePerM2: unit.pricePerM2 || 0,
+              view: unit.view || "город",
+              section: unit.section || "A",
+              status: unit.status || "available",
+              statusHumanized: unit.status_humanized || "Свободно",
+              hasSpecialOffer: unit.hasSpecialOffer || false,
+              specialOfferName: unit.specialOfferName,
+              layoutImage: unit.layoutImage,
+            });
+          });
+          
+          const buildings = Array.from(buildingsMap.values());
+          
+          if (buildings.length > 0) {
+            return {
+              id: "tempo-nova",
+              name: "ТЕМПО",
+              buildings,
+            };
+          }
+        }
+      }
+    } catch (apiError) {
+      console.log("MongoDB API not available, falling back to mock data");
+    }
+    
+    // Fallback to mock data
     const buildings = await getCachedBuildings();
     
     if (!buildings || buildings.length === 0) {
