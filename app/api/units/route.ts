@@ -1,9 +1,16 @@
 import { connectToDatabase } from "@/lib/mongodb";
 import { parseProfitbaseXml, convertOffersToParsedFeed } from "@/lib/profitbaseFeedParser";
+import { getCachedFeedData } from "@/lib/feedCache";
 import type { NextRequest } from "next/server";
 
 export async function GET(_request: NextRequest) {
   try {
+    // First try to return cached feed data
+    const cachedData = getCachedFeedData();
+    if (cachedData) {
+      return Response.json(cachedData.units);
+    }
+
     const { db } = await connectToDatabase();
 
     // Get all units sorted by floor (descending) then by number
@@ -96,9 +103,18 @@ export async function POST(request: NextRequest) {
       unitCount: feedData.units.filter(u => u.building === name).length,
     }));
 
+    // Cache the parsed data
+    const { setCachedFeedData } = await import("@/lib/feedCache");
+    setCachedFeedData({
+      buildings,
+      units: feedData.units,
+      timestamp: Date.now(),
+      feedUrl,
+    });
+
     return Response.json({
       success: true,
-      message: "Feed parsed successfully",
+      message: "Feed parsed successfully and cached",
       summary: {
         feedUrl,
         totalBuildings: buildings.length,
@@ -107,7 +123,7 @@ export async function POST(request: NextRequest) {
       },
       data: {
         buildings,
-        units: feedData.units,
+        units: feedData.units.length, // Just return count, not full array
       },
     });
   } catch (error) {
