@@ -35,7 +35,6 @@ export type ProfitbaseBuilding = {
 export async function fetchAndParseFeed(): Promise<ProfitbaseBuilding[]> {
   try {
     const response = await fetch(FEED_URL, { 
-      timeout: 10000,
       next: { revalidate: 3600 }
     });
     
@@ -87,10 +86,6 @@ export async function fetchAndParseFeed(): Promise<ProfitbaseBuilding[]> {
     console.error("❌ Error loading Profitbase feed:", error);
     return generateMockData();
   }
-  
-  return Array.from(buildingMap.values()).sort((a, b) => 
-    a.name.localeCompare(b.name, 'ru')
-  );
 }
 
 /**
@@ -230,13 +225,6 @@ function parseOffer(content: string): ProfitbaseUnit | null {
 }
 
 /**
- * Кеш для хранения загруженных данных
- */
-let cachedBuildings: ProfitbaseBuilding[] | null = null;
-let cacheTime = 0;
-const CACHE_DURATION = 3600 * 1000; // 1 час
-
-/**
  * Получает здания с кешированием
  */
 export async function getCachedBuildings(): Promise<ProfitbaseBuilding[]> {
@@ -350,3 +338,4 @@ function generateMockData(): ProfitbaseBuilding[] {
       ],
     },
   ];
+}
