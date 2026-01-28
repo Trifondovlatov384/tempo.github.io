@@ -1,0 +1,383 @@
+/**
+ * Логика построения сетки шахматки для отображения квартир/лотов.
+ * 
+ * Принцип работы:
+ * 1. Юниты группируются по этажам (floor)
+ * 2. Этажи сортируются по убыванию (верхние наверху)
+ * 3. Юниты на каждом этаже сортируются по выбранному полю
+ * 4. Вычисляется максимальное количество колонок для выравнивания сетки
+ * 
+ * Визуальное представление:
+ * 
+ *     | Кол.1 | Кол.2 | Кол.3 | Кол.4 |
+ * ----+-------+-------+-------+-------+
+ *  9  | 901   | 902   | 903   |       |  <- этаж 9 (3 квартиры)
+ *  8  | 801   | 802   | 803   | 804   |  <- этаж 8 (4 квартиры)
+ *  7  | 701   | 702   | 703   | 704   |  <- этаж 7 (4 квартиры)
+ *  ...
+ *  1  | 101   | 102   |       |       |  <- этаж 1 (2 квартиры)
+ */
+
+// ============================================
+// ТИПЫ
+// ============================================
+
+/** Минимальные данные юнита для построения сетки */
+export interface ChessUnit {
+  id: string;
+  floor: number | null;
+  number: string | null;
+  area: number | null;
+  price: number | null;
+  type: string | null;
+  status?: string | null;
+  [key: string]: unknown; // Позволяет передавать дополнительные поля
+}
+
+/** Варианты сортировки юнитов на этаже */
+export type ChessOrderBy = "number" | "area" | "price" | "type";
+
+/** Результат построения сетки */
+export interface ChessGrid<T extends ChessUnit> {
+  /** Список этажей (отсортированы по убыванию) */
+  floors: number[];
+  /** Юниты на каждом этаже (индекс соответствует floors) */
+  rows: T[][];
+  /** Максимальное количество колонок (для выравнивания пустых ячеек) */
+  maxCols: number;
+  /** Общее количество юнитов */
+  totalUnits: number;
+}
+
+/** Статистика по сетке */
+export interface ChessGridStats {
+  totalUnits: number;
+  totalFloors: number;
+  maxUnitsPerFloor: number;
+  minFloor: number;
+  maxFloor: number;
+  floorsWithUnits: Map<number, number>; // floor -> count
+}
+
+// ============================================
+// КОНСТАНТЫ
+// ============================================
+
+/** Статусы юнитов */
+export const UNIT_STATUS = {
+  sold: "sold",                      // Продано
+  paid_reservation: "paid_reservation", // Платная бронь
+  free_reservation: "free_reservation", // Бесплатная бронь
+  available: "available",            // Свободный
+  closed_for_sale: "closed_for_sale", // Закрыто в продажу
+} as const;
+
+export type UnitStatusValue = (typeof UNIT_STATUS)[keyof typeof UNIT_STATUS];
+
+/** Человекочитаемые названия статусов */
+export const UNIT_STATUS_LABELS: Record<UnitStatusValue, string> = {
+  [UNIT_STATUS.sold]: "Продано",
+  [UNIT_STATUS.paid_reservation]: "Платная бронь",
+  [UNIT_STATUS.free_reservation]: "Бесплатная бронь",
+  [UNIT_STATUS.available]: "Свободный",
+  [UNIT_STATUS.closed_for_sale]: "Закрыто в продажу",
+};
+
+/** Стили отображения статусов в шахматке (Tailwind классы) */
+export const UNIT_STATUS_STYLES: Record<
+  UnitStatusValue,
+  { 
+    bg: string;      // Цвет фона
+    text: string;    // Цвет текста
+    pattern?: "stripes"; // Паттерн (полоски)
+    lock?: boolean;  // Показывать иконку замка
+  }
+> = {
+  [UNIT_STATUS.sold]: { 
+    bg: "bg-[#9ca3af]", 
+    text: "text-white" 
+  },
+  [UNIT_STATUS.paid_reservation]: { 
+    bg: "bg-[#9ca3af]", 
+    text: "text-white", 
+    pattern: "stripes" 
+  },
+  [UNIT_STATUS.free_reservation]: { 
+    bg: "bg-[#facc15]", 
+    text: "text-[#1f2937]" 
+  },
+  [UNIT_STATUS.available]: { 
+    bg: "bg-white border border-[#e5e7eb]", 
+    text: "text-[#374151]" 
+  },
+  [UNIT_STATUS.closed_for_sale]: { 
+    bg: "bg-[#e5e7eb]", 
+    text: "text-[#374151]", 
+    lock: true 
+  },
+};
+
+/** Опции сортировки для UI */
+export const CHESS_ORDER_BY_OPTIONS: { value: ChessOrderBy; label: string }[] = [
+  { value: "number", label: "По номеру" },
+  { value: "area", label: "По площади" },
+  { value: "price", label: "По стоимости" },
+  { value: "type", label: "По типу" },
+];
+
+// ============================================
+// ФУНКЦИИ СОРТИРОВКИ
+// ============================================
+
+/**
+ * Сортирует юниты по указанному полю.
+ * - number/type: алфавитная сортировка с поддержкой чисел
+ * - area/price: числовая сортировка
+ */
+export function sortUnits<T extends ChessUnit>(units: T[], orderBy: ChessOrderBy): T[] {
+  const key = orderBy === "number" ? "number" 
+            : orderBy === "area" ? "area" 
+            : orderBy === "price" ? "price" 
+            : "type";
+  
+  return [...units].sort((a, b) => {
+    const va = key === "number" || key === "type" 
+      ? (a[key] ?? "") 
+      : ((a[key] ?? 0) as number);
+    const vb = key === "number" || key === "type" 
+      ? (b[key] ?? "") 
+      : ((b[key] ?? 0) as number);
+    
+    // Строковое сравнение с поддержкой чисел в строках ("101" < "2" не будет)
+    if (typeof va === "string" && typeof vb === "string") {
+      return va.localeCompare(vb, undefined, { numeric: true });
+    }
+    
+    // Числовое сравнение
+    return Number(va) - Number(vb);
+  });
+}
+
+// ============================================
+// ОСНОВНАЯ ФУНКЦИЯ ПОСТРОЕНИЯ СЕТКИ
+// ============================================
+
+/**
+ * Строит сетку шахматки из списка юнитов.
+ * 
+ * @param units - Массив юнитов с данными (floor, number, area, price, type)
+ * @param orderBy - Поле для сортировки юнитов на этаже
+ * @returns Объект с данными сетки: этажи, строки юнитов, макс. колонок
+ * 
+ * @example
+ * const units = [
+ *   { id: "1", floor: 1, number: "101", area: 50, price: 5000000, type: "1-к" },
+ *   { id: "2", floor: 1, number: "102", area: 60, price: 6000000, type: "2-к" },
+ *   { id: "3", floor: 2, number: "201", area: 55, price: 5500000, type: "1-к" },
+ * ];
+ * 
+ * const grid = buildChessGrid(units, "number");
+ * // grid.floors = [2, 1] (этажи по убыванию)
+ * // grid.rows[0] = [unit "201"] (этаж 2)
+ * // grid.rows[1] = [unit "101", unit "102"] (этаж 1)
+ * // grid.maxCols = 2
+ */
+export function buildChessGrid<T extends ChessUnit>(
+  units: T[], 
+  orderBy: ChessOrderBy = "number"
+): ChessGrid<T> {
+  // 1. Группируем юниты по этажам
+  const byFloor = new Map<number, T[]>();
+  
+  for (const unit of units) {
+    const floor = unit.floor ?? 0;
+    if (!byFloor.has(floor)) {
+      byFloor.set(floor, []);
+    }
+    byFloor.get(floor)!.push(unit);
+  }
+  
+  // 2. Сортируем этажи по убыванию (верхние наверху)
+  const floors = Array.from(byFloor.keys()).sort((a, b) => b - a);
+  
+  // 3. Сортируем юниты на каждом этаже
+  const rows: T[][] = floors.map((floor) => 
+    sortUnits(byFloor.get(floor)!, orderBy)
+  );
+  
+  // 4. Вычисляем максимальное количество колонок
+  const maxCols = Math.max(1, ...rows.map((row) => row.length));
+  
+  // 5. Общее количество юнитов
+  const totalUnits = units.length;
+  
+  return { floors, rows, maxCols, totalUnits };
+}
+
+// ============================================
+// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+// ============================================
+
+/**
+ * Вычисляет статистику по сетке.
+ */
+export function getChessGridStats<T extends ChessUnit>(grid: ChessGrid<T>): ChessGridStats {
+  const floorsWithUnits = new Map<number, number>();
+  
+  for (let i = 0; i < grid.floors.length; i++) {
+    floorsWithUnits.set(grid.floors[i], grid.rows[i].length);
+  }
+  
+  return {
+    totalUnits: grid.totalUnits,
+    totalFloors: grid.floors.length,
+    maxUnitsPerFloor: grid.maxCols,
+    minFloor: grid.floors.length > 0 ? Math.min(...grid.floors) : 0,
+    maxFloor: grid.floors.length > 0 ? Math.max(...grid.floors) : 0,
+    floorsWithUnits,
+  };
+}
+
+/**
+ * Фильтрует юниты по статусу.
+ */
+export function filterUnitsByStatus<T extends ChessUnit>(
+  units: T[], 
+  statuses: UnitStatusValue[]
+): T[] {
+  if (statuses.length === 0) return units;
+  return units.filter((u) => 
+    statuses.includes((u.status ?? UNIT_STATUS.available) as UnitStatusValue)
+  );
+}
+
+/**
+ * Фильтрует юниты по диапазону этажей.
+ */
+export function filterUnitsByFloorRange<T extends ChessUnit>(
+  units: T[], 
+  minFloor?: number, 
+  maxFloor?: number
+): T[] {
+  return units.filter((u) => {
+    const floor = u.floor ?? 0;
+    if (minFloor !== undefined && floor < minFloor) return false;
+    if (maxFloor !== undefined && floor > maxFloor) return false;
+    return true;
+  });
+}
+
+/**
+ * Фильтрует юниты по диапазону цен.
+ */
+export function filterUnitsByPriceRange<T extends ChessUnit>(
+  units: T[], 
+  minPrice?: number, 
+  maxPrice?: number
+): T[] {
+  return units.filter((u) => {
+    const price = u.price ?? 0;
+    if (minPrice !== undefined && price < minPrice) return false;
+    if (maxPrice !== undefined && price > maxPrice) return false;
+    return true;
+  });
+}
+
+/**
+ * Фильтрует юниты по диапазону площадей.
+ */
+export function filterUnitsByAreaRange<T extends ChessUnit>(
+  units: T[], 
+  minArea?: number, 
+  maxArea?: number
+): T[] {
+  return units.filter((u) => {
+    const area = u.area ?? 0;
+    if (minArea !== undefined && area < minArea) return false;
+    if (maxArea !== undefined && area > maxArea) return false;
+    return true;
+  });
+}
+
+/**
+ * Получает количество пустых ячеек в строке.
+ */
+export function getEmptyCellsCount<T extends ChessUnit>(
+  row: T[], 
+  maxCols: number
+): number {
+  return Math.max(0, maxCols - row.length);
+}
+
+/**
+ * Форматирует цену в рублях.
+ */
+export function formatPrice(price: number | null | undefined): string {
+  if (price == null || price <= 0) return "—";
+  return `${new Intl.NumberFormat("ru").format(price)} ₽`;
+}
+
+/**
+ * Форматирует площадь.
+ */
+export function formatArea(area: number | null | undefined): string {
+  if (area == null || area <= 0) return "—";
+  return `${area} м²`;
+}
+
+/**
+ * Получает стиль ячейки по статусу юнита.
+ */
+export function getUnitCellStyle(status: string | null | undefined) {
+  const s = (status ?? UNIT_STATUS.available) as UnitStatusValue;
+  return UNIT_STATUS_STYLES[s] ?? UNIT_STATUS_STYLES[UNIT_STATUS.available];
+}
+
+/**
+ * Получает текстовую метку статуса.
+ */
+export function getUnitStatusLabel(status: string | null | undefined): string {
+  const s = (status ?? UNIT_STATUS.available) as UnitStatusValue;
+  return UNIT_STATUS_LABELS[s] ?? "—";
+}
+
+// ============================================
+// ПРИМЕР ИСПОЛЬЗОВАНИЯ
+// ============================================
+
+/**
+ * Пример использования:
+ * 
+ * ```typescript
+ * import { 
+ *   buildChessGrid, 
+ *   filterUnitsByStatus, 
+ *   getChessGridStats,
+ *   UNIT_STATUS,
+ *   formatPrice,
+ *   getUnitCellStyle 
+ * } from "@/lib/chessboardGrid";
+ * 
+ * // Данные юнитов из БД
+ * const units = await getUnits(buildingId);
+ * 
+ * // Фильтруем только свободные
+ * const availableUnits = filterUnitsByStatus(units, [UNIT_STATUS.available]);
+ * 
+ * // Строим сетку с сортировкой по номеру
+ * const grid = buildChessGrid(availableUnits, "number");
+ * 
+ * // Получаем статистику
+ * const stats = getChessGridStats(grid);
+ * console.log(`Этажей: ${stats.totalFloors}, Юнитов: ${stats.totalUnits}`);
+ * 
+ * // Рендерим сетку
+ * grid.floors.forEach((floor, rowIndex) => {
+ *   console.log(`Этаж ${floor}:`);
+ *   grid.rows[rowIndex].forEach(unit => {
+ *     const style = getUnitCellStyle(unit.status);
+ *     console.log(`  ${unit.number} - ${formatPrice(unit.price)} [${style.bg}]`);
+ *   });
+ * });
+ * ```
+ */

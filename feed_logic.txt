@@ -1,0 +1,526 @@
+/**
+ * ============================================================================
+ * ЛОГИКА РАБОТЫ ФИДОВ И СИНХРОНИЗАЦИИ С БАЗОЙ ДАННЫХ
+ * ============================================================================
+ * 
+ * Этот файл описывает полный цикл работы с фидами застройщиков:
+ * от получения XML до отображения данных в шахматке.
+ * 
+ * СОДЕРЖАНИЕ:
+ * 1. Общая архитектура
+ * 2. Структура базы данных
+ * 3. Поддерживаемые форматы фидов
+ * 4. Процесс синхронизации
+ * 5. Маппинг данных
+ * 6. Отображение в шахматке
+ * 7. Примеры использования
+ */
+
+// ============================================================================
+// 1. ОБЩАЯ АРХИТЕКТУРА
+// ============================================================================
+
+/**
+ * СХЕМА ПОТОКА ДАННЫХ:
+ * 
+ * ┌─────────────────┐
+ * │   XML ФИДЫ      │  Внешние источники (Profitbase, Domclick)
+ * │  застройщиков   │
+ * └────────┬────────┘
+ *          │
+ *          ▼
+ * ┌─────────────────┐
+ * │   ПАРСЕР        │  parseProfitbaseXml()
+ * │ (автоопределе-  │  - Определяет формат XML
+ * │  ние формата)   │  - Извлекает ProfitbaseOffer[]
+ * └────────┬────────┘
+ *          │
+ *          ▼
+ * ┌─────────────────┐
+ * │   СИНХРОНИ-     │  feedSync()
+ * │   ЗАЦИЯ         │  - Группирует по корпусам
+ * │   (Server       │  - Создаёт/обновляет Building
+ * │    Action)      │  - Создаёт/обновляет Unit
+ * └────────┬────────┘
+ *          │
+ *          ▼
+ * ┌─────────────────┐
+ * │    MONGODB      │  Prisma ORM
+ * │   (Complex,     │  - Complex.feedUrl хранит URL фида
+ * │   Building,     │  - Building хранит корпуса
+ * │   Unit)         │  - Unit хранит квартиры
+ * └────────┬────────┘
+ *          │
+ *          ▼
+ * ┌─────────────────┐
+ * │   ШАХМАТКА      │  UnitChessboard + buildChessGrid()
+ * │  (React UI)     │  - Строит сетку из Unit[]
+ * │                 │  - Отображает по этажам
+ * └─────────────────┘
+ */
+
+// ============================================================================
+// 2. СТРУКТУРА БАЗЫ ДАННЫХ
+// ============================================================================
+
+/**
+ * МОДЕЛЬ Complex (Жилой комплекс):
+ * 
+ * model Complex {
+ *   id            String      // MongoDB ObjectId
+ *   name          String?     // "ЖК Солнечный"
+ *   feedUrl       String?     // URL фида застройщика  ← ВАЖНО!
+ *   ...
+ *   Building      Building[]  // Связь с корпусами
+ *   Unit          Unit[]      // Прямая связь с юнитами
+ * }
+ * 
+ * МОДЕЛЬ Building (Корпус):
+ * 
+ * model Building {
+ *   id           String       // MongoDB ObjectId
+ *   rcId         String       // Ссылка на Complex
+ *   name         String?      // "Корпус 1", "Корпус 2"
+ *   handOverDate String?      // "Q4 2026" — срок сдачи
+ *   isDelivered  Boolean?     // true = сдан
+ *   chessOrderBy String?      // Сортировка в шахматке
+ *   Unit         Unit[]       // Квартиры корпуса
+ * }
+ * 
+ * МОДЕЛЬ Unit (Квартира/Лот):
+ * 
+ * model Unit {
+ *   id           String       // MongoDB ObjectId
+ *   rcId         String       // Ссылка на Complex
+ *   buildingId   String       // Ссылка на Building
+ *   
+ *   number       String?      // "101", "А-205"
+ *   floor        Int?         // 5
+ *   type         String?      // "2-к.кв", "Студия"
+ *   area         Float?       // 54.5 (м²)
+ *   price        Float?       // 12500000 (₽)
+ *   pricePerM2   Float?       // 229358 (₽/м²)
+ *   view         String?      // "Двор", "Парк"
+ *   image        String?      // URL планировки
+ *   status       String?      // "available", "sold", etc.
+ * }
+ */
+
+// ============================================================================
+// 3. ПОДДЕРЖИВАЕМЫЕ ФОРМАТЫ ФИДОВ
+// ============================================================================
+
+/**
+ * ФОРМАТ 1: Profitbase XML (realty-feed)
+ * Используется: Темпо и другие проекты
+ * URL пример: https://pb20127.profitbase.ru/export/profitbase_xml/...
+ * 
+ * Структура:
+ * <realty-feed>
+ *   <offer>
+ *     <house>
+ *       <id>12345</id>
+ *       <name>Корпус 1</name>
+ *       <floors-total>25</floors-total>
+ *       <built-year>2026</built-year>
+ *       <ready-quarter>4</ready-quarter>
+ *     </house>
+ *     <number>А-101</number>
+ *     <floor>5</floor>
+ *     <price><value>12500000</value></price>
+ *     <area><value>54.5</value></area>
+ *     <price-meter><value>229358</value></price-meter>
+ *     <status-humanized>Свободно</status-humanized>
+ *     <rooms>2</rooms>
+ *     <window-view>Двор</window-view>
+ *     <image type="plan">https://...</image>
+ *   </offer>
+ *   <offer>...</offer>
+ * </realty-feed>
+ * 
+ * Особенности:
+ * - Плоская структура (все офферы в одном списке)
+ * - Цена/площадь вложены в <value>
+ * - Есть статус (status-humanized)
+ * - Планировка через <image type="plan">
+ */
+
+/**
+ * ФОРМАТ 2: Domclick XML (complexes)
+ * Используется: Sun Garden и другие проекты
+ * URL пример: https://pb2093.profitbase.ru/export/domclick/...
+ * 
+ * Структура:
+ * <complexes>
+ *   <complex>
+ *     <id>119516</id>
+ *     <name>ГК Sun Garden</name>
+ *     <buildings>
+ *       <building>
+ *         <id>177101</id>
+ *         <name>Корпус 1</name>
+ *         <floors>9</floors>
+ *         <built_year>2027</built_year>
+ *         <ready_quarter>1</ready_quarter>
+ *         <flats>
+ *           <flat>
+ *             <flat_id>12136757</flat_id>
+ *             <apartment>140</apartment>     ← номер квартиры
+ *             <floor>1</floor>
+ *             <room>2</room>
+ *             <price>22509000</price>         ← напрямую
+ *             <area>54.9</area>               ← напрямую
+ *             <window_view>Отель</window_view>
+ *             <plans>
+ *               <plan>https://...</plan>      ← планировка
+ *               <plan>https://...</plan>
+ *             </plans>
+ *           </flat>
+ *         </flats>
+ *       </building>
+ *     </buildings>
+ *   </complex>
+ * </complexes>
+ * 
+ * Особенности:
+ * - Вложенная структура (complex → buildings → building → flats → flat)
+ * - Цена/площадь напрямую (не вложены)
+ * - НЕТ статуса (все квартиры считаются свободными)
+ * - Планировки через <plans><plan>
+ * - Номер квартиры в поле <apartment>
+ */
+
+/**
+ * АВТООПРЕДЕЛЕНИЕ ФОРМАТА:
+ * 
+ * Парсер определяет формат по корневому элементу:
+ * - <realty-feed> → Profitbase формат
+ * - <complexes>   → Domclick формат
+ */
+
+// ============================================================================
+// 4. ПРОЦЕСС СИНХРОНИЗАЦИИ
+// ============================================================================
+
+/**
+ * АЛГОРИТМ feedSync(rcId):
+ * 
+ * 1. АВТОРИЗАЦИЯ
+ *    - Проверяем, что пользователь — админ
+ *    - Если нет → ошибка "Unauthorized"
+ * 
+ * 2. ПОЛУЧЕНИЕ КОМПЛЕКСА
+ *    - Ищем Complex по rcId
+ *    - Проверяем наличие feedUrl
+ *    - Если нет URL → ошибка "У комплекса не задан URL фида"
+ * 
+ * 3. ЗАГРУЗКА ФИДА
+ *    - HTTP GET запрос к feedUrl
+ *    - Таймаут: 60 секунд
+ *    - Максимальный размер: 50 MB
+ *    - Ошибки: 4xx/5xx, timeout, слишком большой файл
+ * 
+ * 4. ПАРСИНГ XML
+ *    - Вызов parseProfitbaseXml(xml)
+ *    - Автоопределение формата
+ *    - Результат: ProfitbaseOffer[]
+ *    - Максимум: 100,000 офферов
+ * 
+ * 5. ГРУППИРОВКА ПО КОРПУСАМ
+ *    - Группируем офферы по houseName
+ *    - Дедуплицируем по (houseName, number)
+ *    - Если дубликаты — оставляем последний оффер
+ * 
+ * 6. СИНХРОНИЗАЦИЯ КОРПУСОВ (Building)
+ *    Для каждого houseName:
+ *    
+ *    a) Поиск существующего корпуса:
+ *       SELECT * FROM Building WHERE rcId = ? AND name = ?
+ *    
+ *    b) Если не найден — создаём:
+ *       INSERT INTO Building (rcId, name)
+ *    
+ *    c) Обновляем handOverDate из фида:
+ *       UPDATE Building SET handOverDate = "Q1 2027"
+ * 
+ * 7. СИНХРОНИЗАЦИЯ КВАРТИР (Unit)
+ *    Для каждого оффера в корпусе:
+ *    
+ *    a) Поиск существующего юнита:
+ *       SELECT * FROM Unit WHERE rcId = ? AND buildingId = ? AND number = ?
+ *    
+ *    b) Если найден — ОБНОВЛЯЕМ (фид перезаписывает!):
+ *       UPDATE Unit SET type, floor, price, area, status, image, ...
+ *    
+ *    c) Если не найден — создаём:
+ *       INSERT INTO Unit (rcId, buildingId, number, type, ...)
+ * 
+ * 8. ИНВАЛИДАЦИЯ КЭША
+ *    - revalidatePath(`/rc/${rcId}`)
+ *    - revalidatePath(`/rc/${rcId}/building/${buildingId}`)
+ * 
+ * 9. РЕЗУЛЬТАТ
+ *    {
+ *      ok: true,
+ *      buildingsCreated: 4,
+ *      unitsCreated: 1228,
+ *      unitsUpdated: 0
+ *    }
+ */
+
+/**
+ * ВАЖНО: Фид ВСЕГДА перезаписывает ручные правки!
+ * 
+ * Если вы вручную изменили цену юнита, при следующей синхронизации
+ * она будет перезаписана данными из фида.
+ * 
+ * Исключения (НЕ перезаписываются фидом):
+ * - layout — планировка (URL изображения загруженного вручную)
+ * - handOverDate юнита — индивидуальный срок сдачи
+ */
+
+// ============================================================================
+// 5. МАППИНГ ДАННЫХ
+// ============================================================================
+
+/**
+ * МАППИНГ ПОЛЕЙ XML → БД:
+ * 
+ * ┌────────────────────┬─────────────────────┬─────────────────────┐
+ * │ ПОЛЕ В БД (Unit)   │ PROFITBASE XML      │ DOMCLICK XML        │
+ * ├────────────────────┼─────────────────────┼─────────────────────┤
+ * │ number             │ <number>            │ <apartment>         │
+ * │ floor              │ <floor>             │ <floor>             │
+ * │ price              │ <price><value>      │ <price>             │
+ * │ area               │ <area><value>       │ <area>              │
+ * │ pricePerM2         │ <price-meter><value>│ price / area        │
+ * │ type               │ <rooms> → "2-к.кв"  │ <room> → "2-к.кв"   │
+ * │ view               │ <window-view>       │ <window_view>       │
+ * │ image              │ <image type="plan"> │ <plans><plan>[0]    │
+ * │ status             │ <status-humanized>  │ "available" (по умолч)│
+ * └────────────────────┴─────────────────────┴─────────────────────┘
+ * 
+ * МАППИНГ ПОЛЕЙ XML → БД (Building):
+ * 
+ * ┌────────────────────┬─────────────────────┬─────────────────────┐
+ * │ ПОЛЕ В БД          │ PROFITBASE XML      │ DOMCLICK XML        │
+ * ├────────────────────┼─────────────────────┼─────────────────────┤
+ * │ name               │ <house><name>       │ <building><name>    │
+ * │ handOverDate       │ Q{ready-quarter}    │ Q{ready_quarter}    │
+ * │                    │ {built-year}        │ {built_year}        │
+ * └────────────────────┴─────────────────────┴─────────────────────┘
+ */
+
+/**
+ * МАППИНГ СТАТУСОВ:
+ * 
+ * ┌─────────────────────────┬─────────────────────┐
+ * │ СТАТУС В ФИДЕ           │ СТАТУС В БД         │
+ * ├─────────────────────────┼─────────────────────┤
+ * │ "Свободно"              │ "available"         │
+ * │ "Свободный"             │ "available"         │
+ * │ "Продано"               │ "sold"              │
+ * │ "Не для продажи"        │ "closed_for_sale"   │
+ * │ "Платная бронь"         │ "paid_reservation"  │
+ * │ "Устная бронь"          │ "free_reservation"  │
+ * │ "Оформление ДДУ"        │ "paid_reservation"  │
+ * │ "Подписанный ДДУ"       │ "paid_reservation"  │
+ * │ (пусто / не указан)     │ "available"         │
+ * └─────────────────────────┴─────────────────────┘
+ */
+
+// ============================================================================
+// 6. ОТОБРАЖЕНИЕ В ШАХМАТКЕ
+// ============================================================================
+
+/**
+ * СВЯЗЬ С ШАХМАТКОЙ:
+ * 
+ * 1. ЗАГРУЗКА ДАННЫХ
+ *    - getBuilding(buildingId) → Building с Unit[]
+ *    - Unit[] содержит все поля из БД
+ * 
+ * 2. ПОСТРОЕНИЕ СЕТКИ
+ *    - buildChessGrid(units, orderBy)
+ *    - Группировка по floor
+ *    - Сортировка внутри этажа
+ *    - Расчёт maxCols
+ * 
+ * 3. РЕНДЕРИНГ
+ *    - UnitChessboard компонент
+ *    - Ячейка = ChessCell
+ *    - Стиль определяется по status
+ * 
+ * ВИЗУАЛЬНЫЕ СТИЛИ СТАТУСОВ В ШАХМАТКЕ:
+ * 
+ * ┌─────────────────┬──────────────┬────────────────────────┐
+ * │ СТАТУС          │ ФОНОВЫЙ ЦВЕТ │ ОСОБЕННОСТИ            │
+ * ├─────────────────┼──────────────┼────────────────────────┤
+ * │ available       │ Белый        │ Граница                │
+ * │ sold            │ Серый        │ Белый текст            │
+ * │ paid_reservation│ Серый        │ В полоску (stripes)    │
+ * │ free_reservation│ Жёлтый       │ Тёмный текст           │
+ * │ closed_for_sale │ Светло-серый │ Иконка замка 🔒        │
+ * └─────────────────┴──────────────┴────────────────────────┘
+ */
+
+// ============================================================================
+// 7. ПРИМЕРЫ ИСПОЛЬЗОВАНИЯ
+// ============================================================================
+
+/**
+ * ПРИМЕР 1: Добавление нового проекта с фидом
+ * 
+ * ```typescript
+ * // 1. Создаём комплекс через админку или скрипт
+ * const complex = await prisma.complex.create({
+ *   data: {
+ *     name: "ЖК Новый",
+ *     feedUrl: "https://pb1234.profitbase.ru/export/...",
+ *   }
+ * });
+ * 
+ * // 2. Запускаем синхронизацию
+ * const result = await feedSync(complex.id);
+ * 
+ * // 3. Результат
+ * console.log(result);
+ * // { ok: true, buildingsCreated: 3, unitsCreated: 450, unitsUpdated: 0 }
+ * ```
+ */
+
+/**
+ * ПРИМЕР 2: Обновление существующего проекта
+ * 
+ * ```typescript
+ * // Повторный вызов feedSync обновит существующие юниты
+ * const result = await feedSync("67253b37ab30522c1d474fea");
+ * 
+ * // Результат после обновления
+ * // { ok: true, buildingsCreated: 0, unitsCreated: 5, unitsUpdated: 445 }
+ * // (5 новых квартир, 445 обновлены)
+ * ```
+ */
+
+/**
+ * ПРИМЕР 3: Скрипт для установки фида
+ * 
+ * ```javascript
+ * // scripts/set-feed.mjs
+ * import { PrismaClient } from "@prisma/client";
+ * 
+ * const prisma = new PrismaClient();
+ * const COMPLEX_ID = "687cc48fba0c458bd437b6b1";
+ * const FEED_URL = "https://pb2093.profitbase.ru/export/domclick/...";
+ * 
+ * await prisma.complex.update({
+ *   where: { id: COMPLEX_ID },
+ *   data: { feedUrl: FEED_URL },
+ * });
+ * 
+ * console.log("Feed URL установлен");
+ * ```
+ */
+
+/**
+ * ПРИМЕР 4: Тестирование парсера
+ * 
+ * ```typescript
+ * import { parseProfitbaseXml } from "@/lib/parseProfitbaseXml";
+ * 
+ * const xml = await fetch(feedUrl).then(r => r.text());
+ * const offers = parseProfitbaseXml(xml);
+ * 
+ * console.log(`Распарсено ${offers.length} офферов`);
+ * console.log("Первый оффер:", offers[0]);
+ * // {
+ * //   houseName: "Корпус 1",
+ * //   number: "101",
+ * //   floor: 1,
+ * //   price: 12500000,
+ * //   area: 54.5,
+ * //   statusHumanized: "Свободно",
+ * //   ...
+ * // }
+ * ```
+ */
+
+// ============================================================================
+// ЭКСПОРТЫ (типы для использования в других модулях)
+// ============================================================================
+
+/**
+ * Типы переиспользуются из других модулей:
+ * 
+ * - ProfitbaseOffer — из @/lib/parseProfitbaseXml
+ * - ChessUnit, ChessGrid — из @/lib/chessboardGrid
+ * - Unit, Building, Complex — из Prisma (автогенерация)
+ */
+
+export type FeedFormat = "profitbase" | "domclick";
+
+export interface FeedInfo {
+  format: FeedFormat;
+  url: string;
+  lastSync?: Date;
+  offersCount?: number;
+}
+
+export interface SyncStats {
+  buildingsCreated: number;
+  buildingsUpdated: number;
+  unitsCreated: number;
+  unitsUpdated: number;
+  unitsSkipped: number;
+  errors: string[];
+}
+
+/**
+ * Определяет формат фида по URL или содержимому
+ */
+export function detectFeedFormat(urlOrXml: string): FeedFormat {
+  // По URL
+  if (urlOrXml.includes("/domclick/")) return "domclick";
+  if (urlOrXml.includes("/profitbase_xml/")) return "profitbase";
+  
+  // По содержимому XML
+  if (urlOrXml.includes("<complexes>")) return "domclick";
+  if (urlOrXml.includes("<realty-feed>")) return "profitbase";
+  
+  // По умолчанию
+  return "profitbase";
+}
+
+/**
+ * Проверяет валидность URL фида
+ */
+export function isValidFeedUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Форматирует результат синхронизации для отображения пользователю
+ */
+export function formatSyncResult(stats: SyncStats): string {
+  const parts: string[] = [];
+  
+  if (stats.buildingsCreated > 0) {
+    parts.push(`Корпусов создано: ${stats.buildingsCreated}`);
+  }
+  if (stats.unitsCreated > 0) {
+    parts.push(`Квартир создано: ${stats.unitsCreated}`);
+  }
+  if (stats.unitsUpdated > 0) {
+    parts.push(`Квартир обновлено: ${stats.unitsUpdated}`);
+  }
+  if (stats.errors.length > 0) {
+    parts.push(`Ошибок: ${stats.errors.length}`);
+  }
+  
+  return parts.length > 0 ? parts.join(", ") : "Без изменений";
+}
