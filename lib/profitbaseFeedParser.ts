@@ -18,6 +18,30 @@ export interface ProfitbaseOffer {
   builtYear?: string;
 }
 
+export interface ParsedFeedData {
+  buildings: Map<string, {
+    name: string;
+    floorsTotal: number;
+    handOverDate?: string;
+  }>;
+  units: Array<{
+    id: string;
+    number: string;
+    floor: number;
+    rooms: number;
+    price: number;
+    area: number;
+    pricePerM2: number;
+    view: string;
+    section: string;
+    status: string;
+    statusHumanized: string;
+    hasSpecialOffer: boolean;
+    layoutImage?: string;
+    building: string;
+  }>;
+}
+
 /**
  * Parse Profitbase XML feed format
  * Supports both realty-feed and complexes formats
@@ -189,3 +213,58 @@ function mapStatusHumanized(statusHumanized: string): string {
 
   return "available";
 }
+
+/**
+ * Convert parsed offers to feed data (deduplicated)
+ * Latest offer for each (building, number) wins
+ */
+export function convertOffersToParsedFeed(offers: ProfitbaseOffer[]): ParsedFeedData {
+  const buildingsMap = new Map<string, {
+    name: string;
+    floorsTotal: number;
+    handOverDate?: string;
+  }>();
+
+  const unitsMap = new Map<string, ProfitbaseOffer>();
+
+  // Deduplicate: last offer wins (later offers override earlier ones)
+  offers.forEach((offer) => {
+    const key = `${offer.houseName}:${offer.number}`;
+    unitsMap.set(key, offer);
+
+    // Track buildings
+    if (!buildingsMap.has(offer.houseName)) {
+      buildingsMap.set(offer.houseName, {
+        name: offer.houseName,
+        floorsTotal: offer.houseFloorsTotal || 25,
+        handOverDate: offer.readyQuarter
+          ? `Q${offer.readyQuarter} ${offer.builtYear}`
+          : undefined,
+      });
+    }
+  });
+
+  // Convert to TempoUnit format
+  const units = Array.from(unitsMap.values()).map((offer) => ({
+    id: `${offer.houseName}:${offer.number}`.replace(/\s+/g, "_"),
+    number: offer.number,
+    floor: offer.floor,
+    rooms: offer.rooms || 0,
+    price: offer.price,
+    area: offer.area,
+    pricePerM2: offer.pricePerM2,
+    view: offer.view || "город",
+    section: offer.houseName.charAt(0).toUpperCase(),
+    status: offer.status || "available",
+    statusHumanized: offer.statusHumanized || "Свободно",
+    hasSpecialOffer: false,
+    layoutImage: offer.image,
+    building: offer.houseName,
+  }));
+
+  return {
+    buildings: buildingsMap,
+    units,
+  };
+}
+
