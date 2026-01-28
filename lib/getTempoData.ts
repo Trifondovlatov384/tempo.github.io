@@ -1,5 +1,5 @@
 import { cache } from "react";
-import { getCachedBuildings } from "./profitbaseFeed";
+import { getCachedBuildings } from "./mockData";
 
 export type TempoUnit = {
   id: string;
