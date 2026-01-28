@@ -10,41 +10,31 @@ type Props = {
   onUnitClick: (unit: TempoUnit) => void;
 };
 
-
 export function ChessBoard({
   units,
   discountPercent,
   onUnitClick,
 }: Props) {
-  // Group units by section, then by floor
-  const groupedBySectionAndFloor = useMemo(() => {
-    const sections = new Map<string, Map<number, TempoUnit[]>>();
+  // Group units by floor only
+  const groupedByFloor = useMemo(() => {
+    const floors = new Map<number, TempoUnit[]>();
 
     for (const unit of units) {
-      const section = unit.section || "Без секции";
       const floor = unit.floor || 0;
 
-      if (!sections.has(section)) {
-        sections.set(section, new Map());
+      if (!floors.has(floor)) {
+        floors.set(floor, []);
       }
-      const sectionMap = sections.get(section)!;
-      if (!sectionMap.has(floor)) {
-        sectionMap.set(floor, []);
-      }
-      sectionMap.get(floor)!.push(unit);
+      floors.get(floor)!.push(unit);
     }
 
-    // Convert to sorted arrays
-    const result = Array.from(sections.entries()).map(([section, floorsMap]) => {
-      const floors = Array.from(floorsMap.entries())
-        .sort((a, b) => b[0] - a[0]) // Sort floors descending
-        .map(([floor, unitsInFloor]) => ({
-          floor,
-          units: unitsInFloor.sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0)),
-        }));
-
-      return { section, floors };
-    });
+    // Convert to sorted array: highest floor first
+    const result = Array.from(floors.entries())
+      .sort((a, b) => b[0] - a[0])
+      .map(([floor, unitsInFloor]) => ({
+        floor,
+        units: unitsInFloor.sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0)),
+      }));
 
     return result;
   }, [units]);
@@ -80,83 +70,72 @@ export function ChessBoard({
   };
 
   return (
-    <div className="space-y-8 pb-8">
-      {groupedBySectionAndFloor.map((sectionData) => (
-        <div key={sectionData.section}>
-          <h3 className="text-lg font-semibold text-[#2a515f] mb-4 px-6">
-            {sectionData.section}
-          </h3>
-
-          {sectionData.floors.map((floorData) => (
-            <div key={`${sectionData.section}-${floorData.floor}`} className="mb-6">
-              <h4 className="text-sm font-medium text-[#2a515f]/60 mb-3 px-6">
-                {floorData.floor} этаж
-              </h4>
-
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 px-6">
-                {floorData.units.map((unit) => (
-                  <button
-                    key={unit.id}
-                    onClick={() => onUnitClick(unit)}
-                    className="relative group focus:outline-none"
-                  >
-                    <div
-                      style={{
-                        backgroundColor: getUnitStatusColor(unit),
-                        border: getUnitBorder(unit),
-                      }}
-                      className="aspect-square rounded-lg p-3 hover:shadow-lg transition-all hover:scale-105 flex flex-col justify-between relative overflow-hidden"
-                    >
-                      {/* Special offer badge */}
-                      {unit.hasSpecialOffer && (
-                        <div className="absolute top-1 right-1 w-3 h-3 bg-red-500 rounded-full border border-red-600"></div>
-                      )}
-
-                      {/* Lock icon for closed apartments */}
-                      {unit.status?.toUpperCase().includes("CLOSED") && (
-                        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
-                          <LockClosedIcon className="w-6 h-6 text-[#2a515f]/40" />
-                        </div>
-                      )}
-
-                      <div className="flex flex-col gap-1">
-                        {/* Apartment number */}
-                        <div className="text-lg font-bold text-[#2a515f]">
-                          {unit.number || "—"}
-                        </div>
-
-                        {/* Room count */}
-                        <div className="text-xs text-[#2a515f]/60">
-                          {unit.rooms === 0 ? "Студия" : `${unit.rooms}к`}
-                        </div>
-                      </div>
-
-                      <div className="flex flex-col gap-1 text-xs">
-                        {/* Area */}
-                        {unit.area && (
-                          <div className="text-[#2a515f]/70">{unit.area} м²</div>
-                        )}
-
-                        {/* Price */}
-                        {unit.price && (
-                          <div className="font-semibold text-[#b69a76]">
-                            {formatPrice(unit.price, discountPercent)}
-                          </div>
-                        )}
-
-                        {/* Original price if discount applied */}
-                        {unit.price && discountPercent > 0 && (
-                          <div className="text-[#2a515f]/40 line-through text-xs">
-                            {formatPrice(unit.price, 0)}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
+    <div className="space-y-2 pb-8 px-6">
+      {groupedByFloor.map((floorData) => (
+        <div key={`floor-${floorData.floor}`} className="flex gap-3">
+          {/* Floor label on the left */}
+          <div className="w-12 flex-shrink-0 flex items-center justify-end pr-2">
+            <div className="text-sm font-semibold text-[#2a515f] text-right">
+              {floorData.floor} этаж
             </div>
-          ))}
+          </div>
+
+          {/* Units grid for this floor */}
+          <div className="flex gap-2 overflow-x-auto pb-2">
+            {floorData.units.map((unit) => (
+              <button
+                key={unit.id}
+                onClick={() => onUnitClick(unit)}
+                className="relative group focus:outline-none flex-shrink-0"
+              >
+                <div
+                  style={{
+                    backgroundColor: getUnitStatusColor(unit),
+                    border: getUnitBorder(unit),
+                  }}
+                  className="w-16 h-16 rounded-lg p-2 hover:shadow-lg transition-all hover:scale-110 flex flex-col justify-between relative overflow-hidden"
+                >
+                  {/* Special offer badge */}
+                  {unit.hasSpecialOffer && (
+                    <div className="absolute top-0.5 right-0.5 w-2 h-2 bg-red-500 rounded-full border border-red-600"></div>
+                  )}
+
+                  {/* Lock icon for closed apartments */}
+                  {unit.status?.toUpperCase().includes("CLOSED") && (
+                    <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
+                      <LockClosedIcon className="w-4 h-4 text-[#2a515f]/40" />
+                    </div>
+                  )}
+
+                  <div className="flex flex-col gap-0.5">
+                    {/* Apartment number */}
+                    <div className="text-sm font-bold text-[#2a515f] leading-none">
+                      {unit.number || "—"}
+                    </div>
+
+                    {/* Room count */}
+                    <div className="text-xs text-[#2a515f]/60 leading-none">
+                      {unit.rooms === 0 ? "Студия" : `${unit.rooms}к`}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-0.5 text-xs leading-none">
+                    {/* Area */}
+                    {unit.area && (
+                      <div className="text-[#2a515f]/70 text-xs leading-none">{unit.area.toFixed(1)} м²</div>
+                    )}
+
+                    {/* Price */}
+                    {unit.price && (
+                      <div className="font-semibold text-[#b69a76] text-xs leading-none">
+                        {formatPrice(unit.price, discountPercent)}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
         </div>
       ))}
     </div>
