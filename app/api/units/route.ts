@@ -5,44 +5,45 @@ import type { NextRequest } from "next/server";
 
 export async function GET(_request: NextRequest) {
   try {
-    // First try to return cached feed data
+    // First try to return cached feed data (fast path)
     const cachedData = getCachedFeedData();
-    if (cachedData) {
+    if (cachedData && cachedData.units.length > 0) {
+      console.log(`Returning ${cachedData.units.length} units from cache`);
       return Response.json(cachedData.units);
     }
 
     const { db } = await connectToDatabase();
 
-    // Get all units sorted by floor (descending) then by number
+    // Get all units from MongoDB sorted by floor (descending) then by number
     const units = await db
       .collection("units")
       .find({})
       .sort({ floor: -1, number: 1 })
       .toArray();
 
-    // Transform units to include building info
-    const unitsWithBuilding = units.map((unit: any) => ({
-      _id: unit._id,
+    // Transform units to expected format
+    const unitsFormatted = units.map((unit: any) => ({
       id: unit._id?.toString() || `unit-${unit.number}`,
-      number: unit.number,
+      number: unit.number?.toString() || "0",
+      floor: unit.floor || 1,
       rooms: unit.rooms || 0,
-      floor: unit.floor,
-      price: unit.price,
-      area: unit.area,
-      pricePerM2: unit.pricePerM2,
+      price: unit.price || 0,
+      area: unit.area || 0,
+      pricePerM2: unit.pricePerM2 || 0,
       view: unit.view || "город",
       section: unit.section || "A",
-      status: unit.status,
-      status_humanized: unit.status_humanized || "Свободно",
+      status: unit.status || "available",
+      statusHumanized: unit.status_humanized || "Свободно",
       hasSpecialOffer: unit.hasSpecialOffer || false,
-      specialOfferName: unit.specialOfferName,
       layoutImage: unit.layoutImage,
-      building_id: unit.building_id || "building-1",
-      building_name: unit.building_name || "Корпус 1",
+      building: unit.building || unit.building_name || "Корпус 1",
+      building_name: unit.building_name || unit.building || "Корпус 1",
+      building_id: unit.building_id || unit.building || "building-1",
       floors_total: unit.floors_total || 25,
     }));
 
-    return Response.json(unitsWithBuilding);
+    console.log(`Returning ${unitsFormatted.length} units from MongoDB`);
+    return Response.json(unitsFormatted);
   } catch (error) {
     console.error("API Error:", error);
     return Response.json(
@@ -55,7 +56,7 @@ export async function GET(_request: NextRequest) {
   }
 }
 
-// POST to sync feed (parse only, no DB writes - returns parsed data)
+// POST to sync feed (parse and write to MongoDB)
 export async function POST(request: NextRequest) {
   try {
     const { feedUrl } = await request.json();
@@ -66,6 +67,8 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    const { db } = await connectToDatabase();
 
     // Fetch feed XML
     console.log(`Fetching feed from: ${feedUrl}`);
@@ -94,18 +97,53 @@ export async function POST(request: NextRequest) {
     const feedData = convertOffersToParsedFeed(offers);
     console.log(`After dedup: ${feedData.units.length} units in ${feedData.buildings.size} buildings`);
 
-    // Transform buildings to array format
-    const buildings = Array.from(feedData.buildings.entries()).map(([name, building]) => ({
-      id: name,
-      name: building.name,
-      floorsTotal: building.floorsTotal,
-      handOverDate: building.handOverDate,
-      unitCount: feedData.units.filter(u => u.building === name).length,
-    }));
+    // Clear old units from MongoDB
+    console.log("Clearing old units from MongoDB...");
+    await db.collection("units").deleteMany({});
 
-    // Cache the parsed data
+    // Write units to MongoDB (batch insert for performance)
+    console.log(`Writing ${feedData.units.length} units to MongoDB...`);
+    const unitsCollection = db.collection("units");
+    
+    // Batch insert in chunks of 1000
+    const chunkSize = 1000;
+    for (let i = 0; i < feedData.units.length; i += chunkSize) {
+      const chunk = feedData.units.slice(i, i + chunkSize);
+      const unitsToInsert = chunk.map(unit => ({
+        number: unit.number,
+        floor: unit.floor,
+        building: unit.building,
+        building_name: unit.building,
+        building_id: unit.building,
+        section: unit.section,
+        rooms: unit.rooms,
+        price: unit.price,
+        area: unit.area,
+        pricePerM2: unit.pricePerM2,
+        view: unit.view,
+        status: unit.status,
+        status_humanized: unit.statusHumanized,
+        layoutImage: unit.layoutImage,
+        hasSpecialOffer: unit.hasSpecialOffer,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }));
+      
+      await unitsCollection.insertMany(unitsToInsert);
+      console.log(`Inserted units ${i}-${Math.min(i + chunkSize, feedData.units.length)}`);
+    }
+
+    console.log("All units written to MongoDB successfully");
+
+    // Also save to in-memory cache for quick access
     setCachedFeedData({
-      buildings,
+      buildings: Array.from(feedData.buildings.entries()).map(([name, building]) => ({
+        id: name,
+        name: building.name,
+        floorsTotal: building.floorsTotal,
+        handOverDate: building.handOverDate,
+        unitCount: feedData.units.filter(u => u.building === name).length,
+      })),
       units: feedData.units,
       timestamp: Date.now(),
       feedUrl,
@@ -113,16 +151,11 @@ export async function POST(request: NextRequest) {
 
     return Response.json({
       success: true,
-      message: "Feed parsed successfully and cached",
+      message: "Feed parsed and saved to MongoDB",
       summary: {
         feedUrl,
-        totalBuildings: buildings.length,
+        totalBuildings: feedData.buildings.size,
         totalUnits: feedData.units.length,
-        buildings: buildings.map(b => `${b.name} (${b.unitCount} units)`),
-      },
-      data: {
-        buildings,
-        units: feedData.units.length, // Just return count, not full array
       },
     });
   } catch (error) {
