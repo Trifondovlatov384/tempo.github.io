@@ -28,23 +28,28 @@ function generateTestUnits(buildingName: string, count: number): ProfitbaseUnit[
   const rooms = [1, 2, 3, 4];
   const sections = ["А", "Б", "В"];
   const statuses = [
-    { status: "AVAILABLE", humanized: "Доступна", color: "white" },
-    { status: "SOLD", humanized: "Продана", color: "gray" },
-    { status: "PAID_RESERVATION", humanized: "Зарезервирована", color: "yellow" },
+    { status: "available", humanized: "Свободна", color: "white" },
+    { status: "available", humanized: "Свободна", color: "white" },
+    { status: "available", humanized: "Свободна", color: "white" },
+    { status: "sold", humanized: "Продана", color: "gray" },
+    { status: "paid_reservation", humanized: "Зарезервирована", color: "yellow" },
   ];
 
   for (let i = 0; i < count; i++) {
-    const floor = Math.floor(i / 2) + 1;
+    // Распределяем так чтобы было примерно 12 квартир на этаже
+    const floor = Math.floor(i / 12) + 1;
+    const unitNumberOnFloor = (i % 12) + 1;
+    
     const section = sections[i % sections.length];
     const status = statuses[i % statuses.length];
     const roomsCount = rooms[i % rooms.length];
     const area = 30 + Math.random() * 100;
     const pricePerM2 = 200000 + Math.random() * 50000;
-    const price = Math.round(area * pricePerM2 / 1000000);
+    const price = Math.round(area * pricePerM2);
 
     units.push({
       id: `${buildingName.replace(/\s/g, "-")}-${i + 1}`,
-      number: `${i + 1}`,
+      number: `${String(floor).padStart(2, "0")}${String(unitNumberOnFloor).padStart(2, "0")}`,
       rooms: roomsCount,
       floor,
       area: Math.round(area * 100) / 100,
@@ -64,31 +69,31 @@ function generateTestUnits(buildingName: string, count: number): ProfitbaseUnit[
 }
 
 export async function getCachedBuildings(): Promise<ProfitbaseBuilding[]> {
-  // Возвращаем тестовые данные: 4 корпуса по 10 лотов в каждом
+  // Генерируем тестовые данные: 4 корпуса по 300 лотов в каждом (25 этажей x 12 квартир)
   return [
     {
       id: "building-1",
       name: "Корпус 1",
-      floorsTotal: 20,
-      units: generateTestUnits("Корпус 1", 10),
+      floorsTotal: 25,
+      units: generateTestUnits("Корпус 1", 300),
     },
     {
       id: "building-2",
       name: "Корпус 2",
-      floorsTotal: 20,
-      units: generateTestUnits("Корпус 2", 10),
+      floorsTotal: 25,
+      units: generateTestUnits("Корпус 2", 300),
     },
     {
       id: "building-3",
       name: "Корпус 3",
       floorsTotal: 25,
-      units: generateTestUnits("Корпус 3", 10),
+      units: generateTestUnits("Корпус 3", 300),
     },
     {
       id: "building-4",
       name: "Корпус 4",
       floorsTotal: 25,
-      units: generateTestUnits("Корпус 4", 10),
+      units: generateTestUnits("Корпус 4", 300),
     },
   ];
 }
