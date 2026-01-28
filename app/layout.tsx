@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "../chess_primer.css";
 
 export const metadata: Metadata = {
   title: "ТЕМПО | Шахматка",

@@ -1,8 +1,8 @@
 "use client";
 
 import { useMemo } from "react";
-import { LockClosedIcon } from "@heroicons/react/24/solid";
 import type { TempoUnit } from "@/lib/getTempoData";
+import "../chess_primer.css";
 
 type Props = {
   units: TempoUnit[];
@@ -57,110 +57,84 @@ export function ChessBoard({
     );
   }
 
-  const getUnitStatusColor = (unit: TempoUnit): string => {
-    const status = unit.status?.toUpperCase() || "";
-    if (status.includes("AVAILABLE")) return "#ffffff";
-    if (status.includes("SOLD") || status.includes("DDU")) return "#a0a0a0";
-    if (status.includes("PAID_RESERVATION")) return "#f4d181";
-    if (status.includes("CLOSED")) return "#d0d0d0";
-    return "#ffffff";
-  };
-
-  const getUnitBorder = (unit: TempoUnit): string => {
-    if (unit.hasSpecialOffer) {
-      return "2px solid #ef4444";
-    }
-    return "2px solid #b69a76";
+  const getUnitStatusClass = (unit: TempoUnit): string => {
+    const status = unit.status?.toLowerCase() || "";
+    if (status.includes("available")) return "chess-cell--available";
+    if (status.includes("sold")) return "chess-cell--sold";
+    if (status.includes("paid_reservation")) return "chess-cell--paid-reservation";
+    if (status.includes("free_reservation")) return "chess-cell--free-reservation";
+    if (status.includes("closed")) return "chess-cell--closed";
+    return "chess-cell--available";
   };
 
   const formatPrice = (price: number | null, discount: number): string => {
     if (!price) return "—";
     const discountedPrice = Math.round(price * (1 - discount / 100));
-    return `${(discountedPrice / 1000000).toFixed(2)}M`;
+    return `${(discountedPrice / 1000000).toFixed(1)}M`;
   };
 
-  // Render unified table grid
+  // Render unified grid with chess_primer.css classes
   return (
-    <div className="p-6 overflow-x-auto">
-      <table className="border-collapse whitespace-nowrap">
-        <tbody>
+    <div className="chessboard-wrapper">
+      <div className="chessboard-scroll">
+        <div className="chessboard-grid">
+          {/* Header row with column numbers */}
+          <div className="chessboard-header-row">
+            <div className="chessboard-header-corner" />
+            {Array.from({ length: gridData.maxCols }).map((_, colIdx) => (
+              <div key={`col-${colIdx}`} className="chessboard-header-cell">
+                {colIdx + 1}
+              </div>
+            ))}
+          </div>
+
+          {/* Floor rows */}
           {gridData.rows.map((row, rowIdx) => (
-            <tr key={`floor-${gridData.floors[rowIdx]}`} className="h-20">
-              {/* Floor label (left column) */}
-              <td className="pr-4 pb-2 font-semibold text-[#2a515f] text-right w-12 align-top">
+            <div
+              key={`floor-${gridData.floors[rowIdx]}`}
+              className="chessboard-floor-row"
+            >
+              {/* Floor label */}
+              <div className="chessboard-floor-label">
                 {gridData.floors[rowIdx]}
-              </td>
+              </div>
 
               {/* Unit cells */}
-              {row.map((unit) => (
-                <td
-                  key={unit.id}
-                  className="p-1"
-                  style={{ width: "72px", height: "80px" }}
-                >
+              <div className="chessboard-floor-cells">
+                {row.map((unit) => (
                   <button
+                    key={unit.id}
                     onClick={() => onUnitClick(unit)}
-                    className="w-full h-full focus:outline-none"
+                    className="chess-cell-button"
+                    title={`${unit.number} - ${formatPrice(unit.price, discountPercent)}`}
                   >
-                    <div
-                      style={{
-                        backgroundColor: getUnitStatusColor(unit),
-                        border: getUnitBorder(unit),
-                      }}
-                      className="w-full h-full rounded p-1.5 hover:shadow-lg transition-all hover:scale-105 flex flex-col justify-between relative overflow-hidden text-xs"
-                    >
-                      {/* Special offer badge */}
-                      {unit.hasSpecialOffer && (
-                        <div className="absolute top-0.5 right-0.5 w-1.5 h-1.5 bg-red-500 rounded-full border border-red-600"></div>
-                      )}
-
-                      {/* Lock icon */}
-                      {unit.status?.toUpperCase().includes("CLOSED") && (
-                        <LockClosedIcon className="w-3 h-3 text-[#2a515f]/40 mx-auto" />
-                      )}
-
-                      {/* Unit number */}
-                      <div className="font-bold text-[#2a515f] leading-tight">
+                    <div className={`chess-cell ${getUnitStatusClass(unit)}`}>
+                      <div className="chess-cell-number">
                         {unit.number}
                       </div>
-
-                      {/* Room type */}
-                      <div className="text-[#2a515f]/60 leading-tight">
-                        {unit.rooms === 0 ? "Студия" : `${unit.rooms}к`}
+                      <div className="chess-cell-price">
+                        {formatPrice(unit.price, discountPercent)}
                       </div>
-
-                      {/* Area */}
-                      {unit.area && (
-                        <div className="text-[#2a515f]/70 leading-tight">
-                          {unit.area.toFixed(1)} м²
-                        </div>
-                      )}
-
-                      {/* Price */}
-                      {unit.price && (
-                        <div className="font-semibold text-[#b69a76] leading-tight">
-                          {formatPrice(unit.price, discountPercent)}
+                      {unit.hasSpecialOffer && (
+                        <div className="chess-cell-lock">
+                          ✓
                         </div>
                       )}
                     </div>
                   </button>
-                </td>
-              ))}
+                ))}
 
-              {/* Empty cells for alignment */}
-              {Array.from({
-                length: gridData.maxCols - row.length,
-              }).map((_, i) => (
-                <td
-                  key={`empty-${rowIdx}-${i}`}
-                  className="p-1"
-                  style={{ width: "72px", height: "80px" }}
-                />
-              ))}
-            </tr>
+                {/* Fill empty cells for grid alignment */}
+                {Array.from({
+                  length: gridData.maxCols - row.length,
+                }).map((_, idx) => (
+                  <div key={`empty-${idx}`} className="chess-cell--empty" />
+                ))}
+              </div>
+            </div>
           ))}
-        </tbody>
-      </table>
+        </div>
+      </div>
     </div>
   );
 }

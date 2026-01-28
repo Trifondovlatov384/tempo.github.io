@@ -69,31 +69,31 @@ function generateTestUnits(buildingName: string, count: number): ProfitbaseUnit[
 }
 
 export async function getCachedBuildings(): Promise<ProfitbaseBuilding[]> {
-  // Генерируем тестовые данные: 4 корпуса по 300 лотов в каждом (25 этажей x 12 квартир)
+  // Генерируем тестовые данные: 4 корпуса по 400 лотов в каждом (33 этажа x 12 квартир)
   return [
     {
       id: "building-1",
       name: "Корпус 1",
-      floorsTotal: 25,
-      units: generateTestUnits("Корпус 1", 300),
+      floorsTotal: 33,
+      units: generateTestUnits("Корпус 1", 400),
     },
     {
       id: "building-2",
       name: "Корпус 2",
-      floorsTotal: 25,
-      units: generateTestUnits("Корпус 2", 300),
+      floorsTotal: 33,
+      units: generateTestUnits("Корпус 2", 400),
     },
     {
       id: "building-3",
       name: "Корпус 3",
-      floorsTotal: 25,
-      units: generateTestUnits("Корпус 3", 300),
+      floorsTotal: 33,
+      units: generateTestUnits("Корпус 3", 400),
     },
     {
       id: "building-4",
       name: "Корпус 4",
-      floorsTotal: 25,
-      units: generateTestUnits("Корпус 4", 300),
+      floorsTotal: 33,
+      units: generateTestUnits("Корпус 4", 400),
     },
   ];
 }

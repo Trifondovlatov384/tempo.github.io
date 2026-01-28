@@ -1,0 +1,411 @@
+/**
+ * ============================================================================
+ * ШАХМАТКА (CHESSBOARD) — ПОЛНЫЙ CSS ДИЗАЙН
+ * ============================================================================
+ * 
+ * Конвертировано из Tailwind классов в чистый CSS.
+ * Используется для отображения квартир в виде сетки по этажам.
+ */
+
+/* ============================================================================
+   1. КОНТЕЙНЕР ШАХМАТКИ
+   ============================================================================ */
+
+/* Главный контейнер */
+.chessboard-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 16px; /* gap-4 */
+}
+
+/* Контейнер с прокруткой */
+.chessboard-scroll {
+  overflow: auto;
+  max-height: 60vh; /* max-h-[60vh] */
+}
+
+/* Внутренний контейнер сетки */
+.chessboard-grid {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 1px; /* gap-px */
+  min-width: 0;
+  padding-bottom: 16px; /* pb-4 */
+}
+
+/* ============================================================================
+   2. ПАНЕЛЬ СОРТИРОВКИ (только для админа)
+   ============================================================================ */
+
+.chessboard-sort-panel {
+  display: flex;
+  align-items: center;
+  gap: 8px; /* gap-2 */
+  flex-wrap: wrap;
+}
+
+.chessboard-sort-label {
+  font-size: 14px; /* text-[14px] */
+  color: #666666; /* text-[#666] */
+}
+
+.chessboard-sort-select {
+  border: 1px solid #DFDFDF; /* border border-[#DFDFDF] */
+  border-radius: 8px; /* rounded-[8px] */
+  padding: 6px 12px; /* px-3 py-1.5 */
+  font-size: 14px; /* text-[14px] */
+  background-color: white;
+  cursor: pointer;
+}
+
+.chessboard-sort-select:focus {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* ============================================================================
+   3. СТРОКА ЗАГОЛОВКА (номера колонок)
+   ============================================================================ */
+
+.chessboard-header-row {
+  display: flex;
+  gap: 1px; /* gap-px */
+}
+
+/* Пустая ячейка в углу (над номерами этажей) */
+.chessboard-header-corner {
+  width: 40px; /* w-10 */
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px; /* text-[12px] */
+  font-weight: 500; /* font-medium */
+  color: #666666; /* text-[#666] */
+}
+
+/* Ячейка с номером колонки */
+.chessboard-header-cell {
+  width: 88px; /* w-[88px] */
+  height: 28px; /* h-7 */
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px; /* text-[11px] */
+  color: #999999; /* text-[#999] */
+}
+
+/* ============================================================================
+   4. СТРОКА ЭТАЖА
+   ============================================================================ */
+
+.chessboard-floor-row {
+  display: flex;
+  gap: 1px; /* gap-px */
+}
+
+/* Ячейка с номером этажа (слева) */
+.chessboard-floor-label {
+  width: 40px; /* w-10 */
+  height: 72px; /* h-[72px] */
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px; /* text-[14px] */
+  font-weight: 500; /* font-medium */
+  color: #353535; /* text-[#353535] */
+  background-color: #f5f5f5; /* bg-[#f5f5f5] */
+  border-radius: 6px 0 0 6px; /* rounded-l-[6px] */
+}
+
+/* Контейнер ячеек на этаже */
+.chessboard-floor-cells {
+  display: flex;
+  gap: 1px; /* gap-px */
+}
+
+/* ============================================================================
+   5. ЯЧЕЙКА КВАРТИРЫ (ChessCell)
+   ============================================================================ */
+
+/* Кнопка-обёртка ячейки */
+.chess-cell-button {
+  display: block;
+  position: relative;
+  border-radius: 4px; /* rounded-[4px] */
+  cursor: pointer;
+  border: none;
+  padding: 0;
+  background: none;
+}
+
+.chess-cell-button:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px #3b82f6, 0 0 0 4px white; /* focus:ring-2 focus:ring-primary focus:ring-offset-1 */
+  border-radius: 4px;
+}
+
+/* Внутренний контейнер ячейки */
+.chess-cell {
+  width: 88px; /* w-[88px] */
+  height: 72px; /* h-[72px] */
+  flex-shrink: 0;
+  border-radius: 4px; /* rounded-[4px] */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px; /* text-[11px] */
+  position: relative;
+}
+
+/* Номер квартиры */
+.chess-cell-number {
+  font-weight: 500; /* font-medium */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+  padding: 0 4px; /* px-1 */
+}
+
+/* Цена */
+.chess-cell-price {
+  font-size: 10px; /* text-[10px] */
+  margin-top: 2px; /* mt-0.5 */
+}
+
+/* Иконка замка (для closed_for_sale) */
+.chess-cell-lock {
+  position: absolute;
+  top: 4px; /* top-1 */
+  right: 4px; /* right-1 */
+  width: 14px; /* w-3.5 */
+  height: 14px; /* h-3.5 */
+  opacity: 0.7;
+}
+
+/* ============================================================================
+   6. СТИЛИ СТАТУСОВ ЯЧЕЕК
+   ============================================================================ */
+
+/* Свободный (available) — белый с рамкой */
+.chess-cell--available {
+  background-color: white;
+  border: 1px solid #e5e7eb; /* border border-[#e5e7eb] */
+  color: #374151; /* text-[#374151] */
+}
+
+/* Продано (sold) — серый */
+.chess-cell--sold {
+  background-color: #9ca3af; /* bg-[#9ca3af] */
+  color: white; /* text-white */
+}
+
+/* Платная бронь (paid_reservation) — серый в полоску */
+.chess-cell--paid-reservation {
+  background-color: #9ca3af; /* bg-[#9ca3af] */
+  color: white; /* text-white */
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 4px,
+    rgba(0, 0, 0, 0.08) 4px,
+    rgba(0, 0, 0, 0.08) 8px
+  );
+}
+
+/* Бесплатная бронь (free_reservation) — жёлтый */
+.chess-cell--free-reservation {
+  background-color: #facc15; /* bg-[#facc15] */
+  color: #1f2937; /* text-[#1f2937] */
+}
+
+/* Закрыто в продажу (closed_for_sale) — светло-серый с замком */
+.chess-cell--closed {
+  background-color: #e5e7eb; /* bg-[#e5e7eb] */
+  color: #374151; /* text-[#374151] */
+}
+
+/* ============================================================================
+   7. ПУСТАЯ ЯЧЕЙКА (заполнитель)
+   ============================================================================ */
+
+.chess-cell--empty {
+  width: 88px; /* w-[88px] */
+  height: 72px; /* h-[72px] */
+  flex-shrink: 0;
+  background-color: #f9fafb; /* bg-[#f9fafb] */
+  border-radius: 4px; /* rounded-[4px] */
+}
+
+/* ============================================================================
+   8. ТУЛТИП (всплывающая подсказка)
+   ============================================================================ */
+
+.chess-tooltip {
+  position: fixed;
+  z-index: 99999; /* z-[99999] */
+  width: 224px; /* w-56 */
+  padding: 12px; /* p-3 */
+  background-color: white; /* bg-white */
+  border-radius: 8px; /* rounded-[8px] */
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 
+              0 4px 6px -2px rgba(0, 0, 0, 0.05); /* shadow-lg */
+  border: 1px solid #e5e7eb; /* border border-[#e5e7eb] */
+  pointer-events: none; /* pointer-events-none */
+}
+
+/* Контейнер контента тултипа */
+.chess-tooltip-content {
+  display: flex;
+  gap: 12px; /* gap-3 */
+}
+
+/* Изображение планировки */
+.chess-tooltip-image-wrapper {
+  position: relative;
+  width: 64px; /* w-16 */
+  height: 64px; /* h-16 */
+  flex-shrink: 0;
+  border-radius: 6px; /* rounded-[6px] */
+  overflow: hidden;
+  background-color: #f3f4f6; /* bg-[#f3f4f6] */
+}
+
+.chess-tooltip-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Текстовый блок информации */
+.chess-tooltip-info {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px; /* text-[12px] */
+  color: #374151; /* text-[#374151] */
+}
+
+.chess-tooltip-info > div {
+  margin-bottom: 4px; /* space-y-1 приблизительно */
+}
+
+.chess-tooltip-info > div:last-child {
+  margin-bottom: 0;
+}
+
+/* Метки в тултипе */
+.chess-tooltip-label {
+  color: #9ca3af; /* text-[#9ca3af] */
+}
+
+/* ============================================================================
+   9. ЦВЕТОВАЯ ПАЛИТРА
+   ============================================================================ */
+
+/*
+ * ОСНОВНЫЕ ЦВЕТА:
+ * 
+ * #374151 — Тёмно-серый текст (основной)
+ * #666666 — Серый текст (вторичный)
+ * #999999 — Светло-серый текст (третичный)
+ * #9ca3af — Серый фон (sold, paid_reservation)
+ * #e5e7eb — Светло-серый фон/рамка
+ * #f3f4f6 — Очень светлый серый
+ * #f5f5f5 — Фон номера этажа
+ * #f9fafb — Фон пустой ячейки
+ * #facc15 — Жёлтый (free_reservation)
+ * #1f2937 — Тёмный текст на жёлтом
+ * #DFDFDF — Рамка селекта
+ * #353535 — Номер этажа
+ * #3b82f6 — Primary (focus ring)
+ * white   — Белый фон (available)
+ */
+
+/* ============================================================================
+   10. РАЗМЕРЫ
+   ============================================================================ */
+
+/*
+ * ФИКСИРОВАННЫЕ РАЗМЕРЫ:
+ * 
+ * Ячейка квартиры:     88px × 72px
+ * Ячейка номера этажа: 40px × 72px
+ * Ячейка заголовка:    88px × 28px
+ * Тултип:              224px ширина
+ * Изображение тултипа: 64px × 64px
+ * 
+ * ОТСТУПЫ:
+ * Между ячейками:      1px (gap-px)
+ * Внутри тултипа:      12px
+ * 
+ * СКРУГЛЕНИЯ:
+ * Ячейка:              4px
+ * Номер этажа:         6px (только слева)
+ * Тултип:              8px
+ * Селект:              8px
+ */
+
+/* ============================================================================
+   11. АДАПТИВНОСТЬ (опционально)
+   ============================================================================ */
+
+/* Для мобильных устройств можно уменьшить ячейки */
+@media (max-width: 640px) {
+  .chess-cell,
+  .chess-cell--empty,
+  .chessboard-header-cell {
+    width: 70px;
+  }
+  
+  .chess-cell {
+    height: 60px;
+  }
+  
+  .chess-cell--empty {
+    height: 60px;
+  }
+  
+  .chessboard-floor-label {
+    width: 32px;
+    height: 60px;
+    font-size: 12px;
+  }
+  
+  .chessboard-header-corner {
+    width: 32px;
+  }
+}
+
+/* ============================================================================
+   12. АНИМАЦИИ (опционально)
+   ============================================================================ */
+
+/* Плавное появление тултипа */
+.chess-tooltip {
+  animation: tooltip-fade-in 0.15s ease-out;
+}
+
+@keyframes tooltip-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Hover-эффект на ячейке */
+.chess-cell-button:hover .chess-cell {
+  filter: brightness(0.95);
+  transition: filter 0.1s ease;
+}
+
+.chess-cell-button:active .chess-cell {
+  filter: brightness(0.9);
+}
