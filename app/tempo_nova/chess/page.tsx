@@ -2,6 +2,9 @@ import { getTempoData } from "@/lib/getTempoData";
 import { ChessPageContent } from "./ChessPageContent";
 import { Suspense } from "react";
 
+// Не пререндерить при сборке — данные всегда из БД на каждый запрос
+export const dynamic = "force-dynamic";
+
 async function ChessPageLoading() {
   try {
     const data = await getTempoData();
