@@ -1,58 +1,45 @@
 import { connectToDatabase } from "@/lib/mongodb";
 import { parseProfitbaseXml, convertOffersToParsedFeed } from "@/lib/profitbaseFeedParser";
-import { getCachedFeedData, setCachedFeedData } from "@/lib/feedCache";
+import { setCachedFeedData } from "@/lib/feedCache";
 import type { NextRequest } from "next/server";
 
 export async function GET(_request: NextRequest) {
   try {
-    // First try to return cached feed data (fast path)
-    const cachedData = getCachedFeedData();
-    if (cachedData && cachedData.units.length > 0) {
-      console.log(`Returning ${cachedData.units.length} units from cache`);
-      return Response.json(cachedData.units);
-    }
+    const { db } = await connectToDatabase();
 
-    try {
-      const { db } = await connectToDatabase();
+    const units = await db
+      .collection("units")
+      .find({})
+      .sort({ floor: -1, number: 1 })
+      .toArray();
 
-      // Get all units from MongoDB sorted by floor (descending) then by number
-      const units = await db
-        .collection("units")
-        .find({})
-        .sort({ floor: -1, number: 1 })
-        .toArray();
+    const unitsFormatted = units.map((unit: any) => ({
+      id: unit._id?.toString() || `unit-${unit.number}`,
+      number: unit.number?.toString() || "0",
+      floor: unit.floor || 1,
+      rooms: unit.rooms || 0,
+      price: unit.price || 0,
+      area: unit.area || 0,
+      pricePerM2: unit.pricePerM2 || 0,
+      view: unit.view || "город",
+      section: unit.section || "A",
+      status: unit.status || "available",
+      statusHumanized: unit.status_humanized || "Свободно",
+      hasSpecialOffer: unit.hasSpecialOffer || false,
+      layoutImage: unit.layoutImage,
+      building: unit.building || unit.building_name || "Корпус 1",
+      building_name: unit.building_name || unit.building || "Корпус 1",
+      building_id: unit.building_id || unit.building || "building-1",
+      floors_total: unit.floors_total || 25,
+    }));
 
-      // Transform units to expected format
-      const unitsFormatted = units.map((unit: any) => ({
-        id: unit._id?.toString() || `unit-${unit.number}`,
-        number: unit.number?.toString() || "0",
-        floor: unit.floor || 1,
-        rooms: unit.rooms || 0,
-        price: unit.price || 0,
-        area: unit.area || 0,
-        pricePerM2: unit.pricePerM2 || 0,
-        view: unit.view || "город",
-        section: unit.section || "A",
-        status: unit.status || "available",
-        statusHumanized: unit.status_humanized || "Свободно",
-        hasSpecialOffer: unit.hasSpecialOffer || false,
-        layoutImage: unit.layoutImage,
-        building: unit.building || unit.building_name || "Корпус 1",
-        building_name: unit.building_name || unit.building || "Корпус 1",
-        building_id: unit.building_id || unit.building || "building-1",
-        floors_total: unit.floors_total || 25,
-      }));
-
-      console.log(`Returning ${unitsFormatted.length} units from MongoDB`);
-      return Response.json(unitsFormatted);
-    } catch (dbError) {
-      console.warn("MongoDB not available:", dbError instanceof Error ? dbError.message : String(dbError));
-      // Fall through to empty response - will use cached or mock data on client
-      return Response.json([]);
-    }
+    return Response.json(unitsFormatted);
   } catch (error) {
     console.error("API Error:", error);
-    return Response.json([], { status: 200 }); // Return empty array instead of error
+    return Response.json(
+      { error: error instanceof Error ? error.message : "Database error" },
+      { status: 500 }
+    );
   }
 }
 
