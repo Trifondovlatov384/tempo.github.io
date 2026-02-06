@@ -1,29 +1,24 @@
 import { getTempoData } from "@/lib/getTempoData";
 import { ChessPageContent } from "@/components/ChessPageContent";
-import { SyncFeedButton } from "@/components/SyncFeedButton";
 import { Suspense } from "react";
 
 export const dynamic = "force-dynamic";
 
-async function TempoNovaChessContent() {
+async function ChessPage() {
   try {
     const data = await getTempoData();
 
     if (!data || !data.buildings?.length) {
       return (
-        <div className="flex flex-col items-center justify-center h-96 px-4">
-          <p className="text-[#2a515f]/50 text-center">
-            Нет данных для отображения. Загрузите фид кнопкой ниже или задайте
-            FEED_URL в .env и вызовите синхронизацию.
-          </p>
-          <SyncFeedButton variant="empty" />
+        <div className="flex items-center justify-center h-96">
+          <p className="text-[#2a515f]/50">Нет данных для отображения. Запустите синхронизацию фида (FEED_URL в .env и POST /api/units или cron).</p>
         </div>
       );
     }
 
     return <ChessPageContent data={data} />;
   } catch (error) {
-    console.error("Tempo Nova chess error:", error);
+    console.error("Chess page error:", error);
     return (
       <div className="flex items-center justify-center h-96">
         <div className="text-center">
@@ -35,7 +30,7 @@ async function TempoNovaChessContent() {
   }
 }
 
-export default function TempoNovaChessPage() {
+export default function Home() {
   return (
     <Suspense
       fallback={
@@ -44,7 +39,7 @@ export default function TempoNovaChessPage() {
         </div>
       }
     >
-      <TempoNovaChessContent />
+      <ChessPage />
     </Suspense>
   );
 }

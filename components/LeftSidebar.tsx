@@ -24,14 +24,14 @@ export function LeftSidebar() {
   const currentBuilding = searchParams.get("building") || "1";
   const [chessExpanded, setChessExpanded] = useState(true);
 
-  const isChessActive = pathname.includes("/tempo_nova/chess") || pathname === "/tempo_nova";
-  const isInstallmentActive = pathname.includes("/tempo_nova/installment");
+  const isChessActive = pathname === "/";
+  const isInstallmentActive = pathname === "/installment";
 
   return (
     <aside className="w-[200px] min-h-screen bg-gradient-to-br from-white/80 via-white/70 to-white/60 backdrop-blur-xl border-r border-white/20 text-[#2a515f] flex flex-col shrink-0" style={{ boxShadow: "0 8px 32px rgba(42, 81, 95, 0.1)" }}>
       {/* Logo */}
       <div className="p-4 border-b border-white/20">
-        <Link href="/tempo_nova" className="block">
+        <Link href="/" className="block">
           <img
             src="https://storage.yandexcloud.net/domoplaner/devmedia/532/uploads/nokjt3jpvwi5knohjm8zaihh2grv9dhs.png"
             alt="Tempo Nova"
@@ -64,7 +64,7 @@ export function LeftSidebar() {
               {BUILDINGS.map((building) => (
                 <Link
                   key={building.id}
-                  href={`/tempo_nova/chess?building=${building.id}`}
+                  href={`/?building=${building.id}`}
                   className={`block px-4 py-2 text-sm hover:bg-white/30 transition-colors rounded ${
                     isChessActive && currentBuilding === building.id
                       ? "bg-white/40 text-[#2a515f] font-medium"
@@ -80,7 +80,7 @@ export function LeftSidebar() {
 
         {/* Расчет рассрочки */}
         <Link
-          href="/tempo_nova/installment"
+          href="/installment"
           className={`flex items-center gap-3 px-4 py-3 mx-2 rounded-lg hover:bg-white/30 transition-all ${
             isInstallmentActive ? "bg-white/40" : ""
           }`}

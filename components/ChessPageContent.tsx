@@ -9,6 +9,7 @@ import {
 } from "@/components/ChessFilters";
 import { ChessBoard } from "@/components/ChessBoard";
 import { UnitDetailPanel } from "@/components/UnitDetailPanel";
+import { SyncFeedButton } from "@/components/SyncFeedButton";
 import type { TempoComplex, TempoUnit, TempoBuilding } from "@/lib/getTempoData";
 import { INSTALLMENT_OPTIONS } from "@/lib/discountConfig";
 
@@ -91,20 +92,23 @@ export function ChessPageContent({ data }: Props) {
         <div className="overflow-y-auto">
           {selectedBuildingEntry && (
             <div key={selectedBuildingEntry.building.id} className="mb-12">
-              <div className="px-6 py-4 bg-gradient-to-r from-[#b69a76]/10 to-[#2a515f]/10 border-b border-[#b69a76]/20">
-                <h2 className="text-xl font-semibold text-[#2a515f]">
-                  {selectedBuildingEntry.building.name}{" "}
-                  {statusStats.total > 0 &&
-                    `(${statusStats.total} апартаментов)`}
-                </h2>
-                {statusStats.total > 0 && (
-                  <p className="mt-1 text-xs text-[#2a515f]/70">
-                    Открыто в продажу: {statusStats.available} · Продано:{" "}
-                    {statusStats.sold} · Забронировано:{" "}
-                    {statusStats.paidReservation} · В резерве:{" "}
-                    {statusStats.freeReservation}
-                  </p>
-                )}
+              <div className="px-6 py-4 bg-gradient-to-r from-[#b69a76]/10 to-[#2a515f]/10 border-b border-[#b69a76]/20 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-xl font-semibold text-[#2a515f]">
+                    {selectedBuildingEntry.building.name}{" "}
+                    {statusStats.total > 0 &&
+                      `(${statusStats.total} апартаментов)`}
+                  </h2>
+                  {statusStats.total > 0 && (
+                    <p className="mt-1 text-xs text-[#2a515f]/70">
+                      Открыто в продажу: {statusStats.available} · Продано:{" "}
+                      {statusStats.sold} · Забронировано:{" "}
+                      {statusStats.paidReservation} · В резерве:{" "}
+                      {statusStats.freeReservation}
+                    </p>
+                  )}
+                </div>
+                <SyncFeedButton />
               </div>
               <ChessBoard
                 units={selectedBuildingEntry.units}

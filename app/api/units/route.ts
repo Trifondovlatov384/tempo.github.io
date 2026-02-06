@@ -1,6 +1,5 @@
 import { connectToDatabase } from "@/lib/mongodb";
-import { parseProfitbaseXml, convertOffersToParsedFeed } from "@/lib/profitbaseFeedParser";
-import { setCachedFeedData } from "@/lib/feedCache";
+import { runFeedSync } from "@/lib/feedSync";
 import type { NextRequest } from "next/server";
 
 export async function GET(_request: NextRequest) {
@@ -43,110 +42,34 @@ export async function GET(_request: NextRequest) {
   }
 }
 
-// POST to sync feed (parse and write to MongoDB)
+// POST to sync feed (parse and write only to MongoDB, как в real-estate)
 export async function POST(request: NextRequest) {
   try {
-    const { feedUrl } = await request.json();
+    const body = await request.json().catch(() => ({}));
+    const feedUrl = body.feedUrl ?? process.env.FEED_URL;
 
     if (!feedUrl) {
       return Response.json(
-        { success: false, error: "feedUrl is required" },
+        { success: false, error: "feedUrl required (body or FEED_URL)" },
         { status: 400 }
       );
     }
 
-    // Fetch feed XML
-    console.log(`Fetching feed from: ${feedUrl}`);
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60000);
-    
-    const feedResponse = await fetch(feedUrl, { signal: controller.signal });
-    clearTimeout(timeoutId);
+    const result = await runFeedSync(feedUrl);
 
-    if (!feedResponse.ok) {
+    if (!result.success) {
       return Response.json(
-        { success: false, error: `Failed to fetch feed: ${feedResponse.statusText}` },
-        { status: 400 }
+        { success: false, error: result.error },
+        { status: 500 }
       );
     }
-
-    const xmlContent = await feedResponse.text();
-    console.log(`Feed size: ${(xmlContent.length / 1024 / 1024).toFixed(2)} MB`);
-
-    // Parse feed
-    console.log("Parsing feed XML...");
-    const offers = await parseProfitbaseXml(xmlContent);
-    console.log(`Parsed ${offers.length} offers from feed`);
-
-    // Convert to feed data with deduplication
-    const feedData = convertOffersToParsedFeed(offers);
-    console.log(`After dedup: ${feedData.units.length} units in ${feedData.buildings.size} buildings`);
-
-    // Try to write to MongoDB (but don't fail if unavailable)
-    try {
-      const { db } = await connectToDatabase();
-      console.log("Clearing old units from MongoDB...");
-      await db.collection("units").deleteMany({});
-
-      console.log(`Writing ${feedData.units.length} units to MongoDB...`);
-      const unitsCollection = db.collection("units");
-      
-      // Batch insert in chunks of 1000
-      const chunkSize = 1000;
-      for (let i = 0; i < feedData.units.length; i += chunkSize) {
-        const chunk = feedData.units.slice(i, i + chunkSize);
-        const unitsToInsert = chunk.map(unit => ({
-          number: unit.number,
-          floor: unit.floor,
-          building: unit.building,
-          building_name: unit.building,
-          building_id: unit.building,
-          section: unit.section,
-          rooms: unit.rooms,
-          price: unit.price,
-          area: unit.area,
-          pricePerM2: unit.pricePerM2,
-          view: unit.view,
-          status: unit.status,
-          status_humanized: unit.statusHumanized,
-          layoutImage: unit.layoutImage,
-          hasSpecialOffer: unit.hasSpecialOffer,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        }));
-        
-        await unitsCollection.insertMany(unitsToInsert);
-        console.log(`Inserted units ${i}-${Math.min(i + chunkSize, feedData.units.length)}`);
-      }
-
-      console.log("All units written to MongoDB successfully");
-    } catch (dbError) {
-      console.warn("Could not write to MongoDB, will use in-memory cache:", dbError instanceof Error ? dbError.message : String(dbError));
-    }
-
-    // Save to in-memory cache for quick access
-    setCachedFeedData({
-      buildings: Array.from(feedData.buildings.entries()).map(([name, building]) => ({
-        id: name,
-        name: building.name,
-        floorsTotal: building.floorsTotal,
-        handOverDate: building.handOverDate,
-        unitCount: feedData.units.filter(u => u.building === name).length,
-      })),
-      units: feedData.units,
-      timestamp: Date.now(),
-      feedUrl,
-    });
-
-    console.log("Feed data saved to in-memory cache");
 
     return Response.json({
       success: true,
-      message: "Feed parsed and cached",
+      message: "Feed synced to database",
       summary: {
-        feedUrl,
-        totalBuildings: feedData.buildings.size,
-        totalUnits: feedData.units.length,
+        totalBuildings: result.totalBuildings,
+        totalUnits: result.totalUnits,
       },
     });
   } catch (error) {

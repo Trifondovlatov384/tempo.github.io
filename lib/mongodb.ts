@@ -1,13 +1,17 @@
 import { MongoClient, Db, MongoClientOptions } from "mongodb";
 
-const MONGO_URI =
-  process.env.MONGODB_URI ||
-  "mongodb+srv://nikitavisitskiy_db_user:i4zCkdT80v9iUEgw@cluster0.loefhqo.mongodb.net/?appName=Cluster0";
+const MONGO_URI = process.env.MONGODB_URI;
 
 let cachedClient: MongoClient | null = null;
 let cachedDb: Db | null = null;
 
 export async function connectToDatabase(): Promise<{ client: MongoClient; db: Db }> {
+  if (!MONGO_URI) {
+    throw new Error(
+      "MONGODB_URI is not set. Add it to .env (see .env.example)."
+    );
+  }
+
   // Return cached connection if available
   if (cachedClient && cachedDb) {
     return { client: cachedClient, db: cachedDb };
@@ -18,7 +22,7 @@ export async function connectToDatabase(): Promise<{ client: MongoClient; db: Db
       maxPoolSize: 10,
     };
 
-    const client = new MongoClient(MONGO_URI, options);
+    const client = new MongoClient(MONGO_URI as string, options);
     await client.connect();
 
     const db = client.db("tempo_nova");

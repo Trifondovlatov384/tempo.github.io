@@ -2,6 +2,37 @@
 
 ## Feed Synchronization
 
+### GET /api/feed/sync (рекомендуется)
+Синхронизирует фид в MongoDB. Шахматка читает данные из этой БД.
+
+- **Без параметров:** используется `FEED_URL` из `.env` (на сервере или при `npm run dev`).
+- **С параметром:** `?url=https://...` — явный URL фида.
+
+**Примеры:**
+```bash
+# Если в .env задан FEED_URL (локально или на сервере)
+curl -s "http://localhost:3000/api/feed/sync"
+
+# Или с явным URL (подставьте свой)
+curl -s "http://localhost:3000/api/feed/sync?url=https://pb20127.profitbase.ru/export/profitbase_xml/35f50fe5ae463dd58596adaae32464a5"
+```
+
+**Ответ при успехе (200):**
+```json
+{ "success": true, "totalBuildings": 4, "totalUnits": 1228 }
+```
+
+**Ошибка 400** — не передан `url` и не задан `FEED_URL` в `.env`.
+
+### Скрипт из терминала
+Из корня проекта (приложение должно быть запущено, в `.env` задан `FEED_URL`):
+```bash
+chmod +x scripts/sync-feed.sh
+./scripts/sync-feed.sh
+# На удалённом сервере:
+./scripts/sync-feed.sh http://93.189.230.214
+```
+
 ### GET /api/units
 Returns all units from MongoDB, sorted by floor (descending) and number (ascending).
 
@@ -30,9 +61,9 @@ Returns all units from MongoDB, sorted by floor (descending) and number (ascendi
 ```
 
 ### POST /api/units
-Sync a feed from XML source (Profitbase or Domclick format).
+Синхронизация фида (альтернатива GET /api/feed/sync). Тело можно не передавать — тогда используется `FEED_URL` из `.env`.
 
-**Request:**
+**Request (опционально):**
 ```json
 {
   "feedUrl": "https://pb20127.profitbase.ru/export/profitbase_xml/..."
@@ -43,10 +74,8 @@ Sync a feed from XML source (Profitbase or Domclick format).
 ```json
 {
   "success": true,
-  "buildingsCreated": 4,
-  "buildingsUpdated": 0,
-  "unitsCreated": 1228,
-  "unitsUpdated": 0
+  "message": "Feed synced to database",
+  "summary": { "totalBuildings": 4, "totalUnits": 1228 }
 }
 ```
 
@@ -178,16 +207,16 @@ Profitbase status "status-humanized" values are mapped to internal status:
 
 ## Testing
 
-### Test with Profitbase Feed
+### Синхронизация фида (один из способов)
 ```bash
-curl -X POST http://localhost:3000/api/units \
-  -H "Content-Type: application/json" \
-  -d '{"feedUrl":"https://pb20127.profitbase.ru/export/profitbase_xml/35f50fe5ae463dd58596adaae32464a5"}'
-```
+# 1. Через GET /api/feed/sync (если в .env есть FEED_URL)
+curl -s "http://localhost:3000/api/feed/sync"
 
-### Test with GET /api/sync-feed
-```bash
-curl "http://localhost:3000/api/sync-feed?feedUrl=https://pb20127.profitbase.ru/export/profitbase_xml/35f50fe5ae463dd58596adaae32464a5"
+# 2. С явным URL
+curl -s "http://localhost:3000/api/feed/sync?url=https://pb20127.profitbase.ru/export/profitbase_xml/35f50fe5ae463dd58596adaae32464a5"
+
+# 3. Через POST /api/units (тело пустое — возьмёт FEED_URL из .env)
+curl -X POST http://localhost:3000/api/units -H "Content-Type: application/json" -d '{}'
 ```
 
 ### Get all units
@@ -197,9 +226,18 @@ curl http://localhost:3000/api/units
 
 ## Environment Variables
 
-Required for MongoDB connection:
-```
-MONGODB_URI=mongodb+srv://nikitavisitskiy_db_user:i4zCkdT80v9iUEgw@cluster0.loefhqo.mongodb.net/?appName=Cluster0
-```
+- **MONGODB_URI** — строка подключения к MongoDB. База: `tempo_nova`.
+- **FEED_URL** — URL фида застройщика (Profitbase/Domclick). Нужен для авто-синка по cron и для POST /api/units без тела.
 
-Default database: `tempo_nova`
+## Авто-обновление фида (cron)
+
+Синк выполняется **только из БД** (как в real-estate). Чтобы фиды подтягивались сами с 8:00 до 23:00 каждые 30 минут, настройте на сервере cron:
+
+1. В `.env` задайте `FEED_URL=https://...` (URL фида).
+2. Добавьте задачу:
+```bash
+*/30 8-22 * * * curl -s "http://localhost:3000/api/cron/sync-feed"
+```
+(запуск в 8:00, 8:30, 9:00, … 22:30; не чаще раза в 30 мин).
+
+Эндпоинт **GET /api/cron/sync-feed** сам проверяет время (8–23) и троттлинг 30 мин.

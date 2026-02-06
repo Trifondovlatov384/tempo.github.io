@@ -42,7 +42,7 @@ export function ChessFilters({
   const handleBuildingChange = (index: number) => {
     const params = new URLSearchParams(searchParams.toString());
     params.set("building", String(index + 1));
-    router.push(`/tempo_nova/chess?${params.toString()}`);
+    router.push(`/?${params.toString()}`);
     setBuildingDropdownOpen(false);
   };
 

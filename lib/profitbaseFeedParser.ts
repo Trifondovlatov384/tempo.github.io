@@ -95,14 +95,17 @@ function parseProfitbaseFormat(realtyFeed: any): ProfitbaseOffer[] {
       // Map status
       const status = mapStatusHumanized(statusHumanized);
 
-      // Get image (plan)
+      // Get image (plan или plan floor)
       let image: string | undefined;
       const images = offer.image || [];
-      images.forEach((img: any) => {
-        if (img.$ && img.$["type"] === "plan") {
-          image = img._ || img;
+      for (const img of images) {
+        const type = img?.$?.["type"] ?? "";
+        if (String(type).toLowerCase().includes("plan")) {
+          image = img._ ?? img;
+          if (typeof image !== "string") image = undefined;
+          break;
         }
-      });
+      }
 
       result.push({
         number,
