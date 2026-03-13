@@ -1,6 +1,6 @@
+import { spawnSync } from "child_process";
+import { join } from "path";
 import { MongoClient } from "mongodb";
-import https from "https";
-import axios from "axios";
 import {
   parseProfitbaseXml,
   convertOffersToParsedFeed,
@@ -13,80 +13,41 @@ export type SyncResult = {
   error?: string;
 };
 
-const FEED_TIMEOUT_MS = 60000;
-const FEED_MAX_BYTES = 50 * 1024 * 1024; // 50 MB
-
-// Набор cipher suites для TLS 1.2 (как у программиста). Если не сработает — можно убрать или расширить.
-const TLS12_CIPHERS =
-  "ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384";
+const FEED_MAX_BYTES = 60 * 1024 * 1024; // 60 MB буфер для stdout
 
 /**
- * Загрузка фида по URL — как сказал программист: axios с принудительным TLS 1.2 и SNI.
- * Для теста: в .env задать FEED_INSECURE_SSL=1 чтобы отключить проверку сертификата (только для диагностики).
+ * Топорный вариант: качаем фид через отдельный процесс (npx tsx scripts/feed-fetch-stdout.ts).
+ * В этом процессе на VPS TLS работает; из Next.js API — падает. XML приходит в stdout.
  */
-async function fetchFeedFromUrl(feedUrl: string): Promise<string> {
+function fetchFeedViaSubprocess(feedUrl: string): string {
   const trimmed = feedUrl.trim();
-  const url = new URL(trimmed);
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error(
-      `FEED_URL должен быть http или https. Получено: ${url.protocol}`
-    );
+  if (!trimmed.startsWith("http")) {
+    throw new Error(`FEED_URL должен быть http или https. Получено: ${trimmed.slice(0, 20)}...`);
   }
 
-  const rejectUnauthorized = process.env.FEED_INSECURE_SSL !== "1";
-  if (!rejectUnauthorized) {
-    console.warn(
-      "[feed] FEED_INSECURE_SSL=1: проверка сертификата отключена (только для теста)"
-    );
+  const scriptPath = join(process.cwd(), "scripts", "feed-fetch-stdout.ts");
+  const result = spawnSync("npx", ["tsx", scriptPath], {
+    env: { ...process.env, FEED_URL: trimmed },
+    encoding: "utf8",
+    maxBuffer: FEED_MAX_BYTES,
+    timeout: 90000,
+  });
+
+  if (result.status !== 0) {
+    const err = result.stderr?.trim() || result.error?.message || `exit ${result.status}`;
+    throw new Error(`Не удалось загрузить фид: ${err}`);
   }
 
-  const agent =
-    url.protocol === "https:"
-      ? new https.Agent({
-          rejectUnauthorized,
-          minVersion: "TLSv1.2",
-          maxVersion: "TLSv1.2",
-          servername: url.hostname,
-          ciphers: TLS12_CIPHERS,
-        })
-      : undefined;
-
-  try {
-    const response = await axios.get(trimmed, {
-      httpsAgent: agent,
-      timeout: FEED_TIMEOUT_MS,
-      headers: {
-        Accept: "application/xml, text/xml, */*",
-        "User-Agent": "Mozilla/5.0 (compatible; NovaApp/1.0)",
-      },
-      maxContentLength: FEED_MAX_BYTES,
-      maxBodyLength: FEED_MAX_BYTES,
-      responseType: "text",
-      validateStatus: (status) => status >= 200 && status < 400,
-    });
-
-    let xml = typeof response.data === "string" ? response.data : String(response.data);
-    const firstTag = xml.indexOf("<");
-    if (firstTag > 0) {
-      xml = xml.slice(firstTag);
-    }
-    return xml;
-  } catch (error: unknown) {
-    const msg =
-      error && typeof error === "object" && "message" in error
-        ? String((error as Error).message)
-        : String(error);
-    const axiosErr = error as { response?: { status?: number }; code?: string } | undefined;
-    const status = axiosErr?.response?.status;
-    const code = axiosErr?.code ?? "";
-    const detail = status ? ` HTTP ${status}` : code ? ` ${code}` : "";
-    throw new Error(`Не удалось загрузить фид:${detail} ${msg}`);
+  const xml = result.stdout ?? "";
+  if (!xml.includes("<")) {
+    throw new Error("Пустой или неверный ответ фида");
   }
+  return xml;
 }
 
 /**
  * Синхронизация фида в БД. Один Profitbase: feedUrl из .env.
- * Запись через нативный MongoDB (без транзакций), т.к. Atlas M0 не поддерживает transactions.
+ * Загрузка фида — через subprocess (работает на VPS), запись — нативный MongoDB.
  */
 export async function runFeedSync(feedUrl: string): Promise<SyncResult> {
   const uri = process.env.MONGODB_URI;
@@ -101,7 +62,7 @@ export async function runFeedSync(feedUrl: string): Promise<SyncResult> {
 
   let client: MongoClient | null = null;
   try {
-    const xmlContent = await fetchFeedFromUrl(feedUrl);
+    const xmlContent = fetchFeedViaSubprocess(feedUrl);
     const offers = await parseProfitbaseXml(xmlContent);
     const feedData = convertOffersToParsedFeed(offers);
 
