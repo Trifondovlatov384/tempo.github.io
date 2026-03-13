@@ -1,6 +1,4 @@
 import { MongoClient } from "mongodb";
-import { readFileSync } from "fs";
-import { join } from "path";
 import {
   parseProfitbaseXml,
   convertOffersToParsedFeed,
@@ -13,31 +11,93 @@ export type SyncResult = {
   error?: string;
 };
 
-/** Читает XML: по URL или из локального файла (file://feed.xml / file:feed.xml). */
-async function loadFeedXml(feedUrl: string): Promise<string> {
-  const fileMatch = /^file:\/?\/*(.+)$/.exec(feedUrl.trim());
-  if (fileMatch) {
-    const path = join(process.cwd(), fileMatch[1].replace(/^\/+/, ""));
-    let raw = readFileSync(path, "utf-8");
-    const firstTag = raw.indexOf("<");
-    if (firstTag > 0) {
-      raw = raw.slice(firstTag);
-    }
-    return raw;
+const FEED_TIMEOUT_MS = 60000;
+const FEED_MAX_BYTES = 50 * 1024 * 1024; // 50 MB
+
+// Загрузка фида по URL — обычный fetch (референс: feed_help.txt). Таймаут 60 с, лимит 50 MB, Accept: application/xml, text/xml. Без axios и без кастомного HTTPS-агента.
+async function fetchFeedFromUrl(feedUrl: string): Promise<string> {
+  const trimmed = feedUrl.trim();
+  const url = new URL(trimmed);
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error(
+      `FEED_URL должен быть http или https. Получено: ${url.protocol}`
+    );
   }
+
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 60000);
-  const res = await fetch(feedUrl, { signal: controller.signal });
+  const timeoutId = setTimeout(() => controller.abort(), FEED_TIMEOUT_MS);
+
+  const res = await fetch(trimmed, {
+    signal: controller.signal,
+    headers: {
+      Accept: "application/xml, text/xml, */*",
+    },
+  });
   clearTimeout(timeoutId);
+
   if (!res.ok) {
     throw new Error(`Feed HTTP ${res.status}`);
   }
-  return res.text();
+
+  const contentLength = res.headers.get("content-length");
+  if (contentLength) {
+    const len = parseInt(contentLength, 10);
+    if (!Number.isNaN(len) && len > FEED_MAX_BYTES) {
+      throw new Error(
+        `Размер фида превышает лимит 50 MB: ${(len / 1024 / 1024).toFixed(1)} MB`
+      );
+    }
+  }
+
+  const reader = res.body?.getReader();
+  if (!reader) {
+    throw new Error("Нет тела ответа");
+  }
+
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (total + value.length > FEED_MAX_BYTES) {
+        reader.cancel();
+        throw new Error(
+          `Размер фида превышает лимит 50 MB (получено ≥ ${(total / 1024 / 1024).toFixed(1)} MB)`
+        );
+      }
+      chunks.push(value);
+      total += value.length;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const decoder = new TextDecoder("utf-8");
+  const text = decoder.decode(
+    chunks.length === 1 ? chunks[0] : concatUint8Arrays(chunks)
+  );
+  const firstTag = text.indexOf("<");
+  if (firstTag > 0) {
+    return text.slice(firstTag);
+  }
+  return text;
+}
+
+function concatUint8Arrays(arr: Uint8Array[]): Uint8Array {
+  const total = arr.reduce((s, a) => s + a.length, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const a of arr) {
+    out.set(a, offset);
+    offset += a.length;
+  }
+  return out;
 }
 
 /**
- * Синхронизация фида в БД. Запись через нативный MongoDB (без транзакций),
- * т.к. Atlas M0 и др. не поддерживают transactions.
+ * Синхронизация фида в БД. Один Profitbase: feedUrl из .env.
+ * Запись через нативный MongoDB (без транзакций), т.к. Atlas M0 не поддерживает transactions.
  */
 export async function runFeedSync(feedUrl: string): Promise<SyncResult> {
   const uri = process.env.MONGODB_URI;
@@ -46,13 +106,13 @@ export async function runFeedSync(feedUrl: string): Promise<SyncResult> {
       success: false,
       totalBuildings: 0,
       totalUnits: 0,
-      error: "MONGODB_URI is not set",
+      error: "MONGODB_URI не задан в .env",
     };
   }
 
   let client: MongoClient | null = null;
   try {
-    const xmlContent = await loadFeedXml(feedUrl);
+    const xmlContent = await fetchFeedFromUrl(feedUrl);
     const offers = await parseProfitbaseXml(xmlContent);
     const feedData = convertOffersToParsedFeed(offers);
 
@@ -73,8 +133,11 @@ export async function runFeedSync(feedUrl: string): Promise<SyncResult> {
 
     const chunkSize = 500;
     const units = feedData.units;
-    for (let i = 0; i < units.length; i += chunkSize) {
-      const chunk = units.slice(i, i + chunkSize);
+    const LIMIT = 100_000;
+    const toInsert = units.slice(0, LIMIT);
+
+    for (let i = 0; i < toInsert.length; i += chunkSize) {
+      const chunk = toInsert.slice(i, i + chunkSize);
       const docs = chunk.map((unit) => ({
         number: unit.number,
         floor: unit.floor,
@@ -101,7 +164,7 @@ export async function runFeedSync(feedUrl: string): Promise<SyncResult> {
     return {
       success: true,
       totalBuildings: feedData.buildings.size,
-      totalUnits: feedData.units.length,
+      totalUnits: toInsert.length,
     };
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);

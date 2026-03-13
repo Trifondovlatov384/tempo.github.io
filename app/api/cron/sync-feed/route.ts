@@ -1,4 +1,4 @@
-// Синк фида по расписанию. Crontab: см. DEPLOY.md
+
 import { runFeedSync } from "@/lib/profitbase/sync";
 import type { NextRequest } from "next/server";
 
@@ -12,10 +12,10 @@ function isInWindow(): boolean {
 }
 
 export async function GET(_request: NextRequest) {
-  const feedUrl = process.env.FEED_URL || "file://feed.xml";
-  if (!feedUrl) {
+  const feedUrl = process.env.FEED_URL?.trim();
+  if (!feedUrl || !feedUrl.startsWith("http")) {
     return Response.json(
-      { ok: false, error: "FEED_URL not set" },
+      { ok: false, error: "В .env задайте FEED_URL (https://...profitbase.ru/...)" },
       { status: 503 }
     );
   }

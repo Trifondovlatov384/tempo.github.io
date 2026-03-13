@@ -4,21 +4,19 @@ import type { NextRequest } from "next/server";
 /**
  * GET /api/feed/sync
  * GET /api/feed/sync?url=<feedUrl>
- * Синхронизирует фид в БД. Если url не передан — используется FEED_URL из .env.
+ * Синхронизирует фид в БД. Используется FEED_URL из .env или параметр url (только http/https).
  */
 export async function GET(request: NextRequest) {
   try {
     const feedUrl =
-      request.nextUrl.searchParams.get("url") ||
-      process.env.FEED_URL ||
-      "file://feed.xml";
+      request.nextUrl.searchParams.get("url") || process.env.FEED_URL;
 
-    if (!feedUrl) {
+    if (!feedUrl || !feedUrl.startsWith("http")) {
       return Response.json(
         {
           success: false,
           error:
-            "url parameter or FEED_URL in .env is required. Example: /api/feed/sync?url=https://...",
+            "В .env задайте FEED_URL (https://...profitbase.ru/...) или передайте ?url=https://...",
         },
         { status: 400 }
       );
