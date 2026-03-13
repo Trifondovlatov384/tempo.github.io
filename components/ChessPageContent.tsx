@@ -10,7 +10,7 @@ import {
 import { ChessBoard } from "@/components/ChessBoard";
 import { UnitDetailPanel } from "@/components/UnitDetailPanel";
 import { SyncFeedButton } from "@/components/SyncFeedButton";
-import type { TempoComplex, TempoUnit, TempoBuilding } from "@/lib/getTempoData";
+import type { TempoComplex, TempoUnit, TempoBuilding } from "@/lib/chessboard/getTempoData";
 import { INSTALLMENT_OPTIONS } from "@/lib/discountConfig";
 
 type Props = {
@@ -124,7 +124,7 @@ export function ChessPageContent({ data }: Props) {
         <UnitDetailPanel
           unit={selectedUnit}
           discountPercent={discountPercent}
-          complexName={selectedUnit.section || data.buildings[0]?.name || null}
+          buildingName={selectedBuildingEntry?.building?.name ?? data.buildings[0]?.name ?? null}
           onClose={() => setSelectedUnit(null)}
         />
       )}

@@ -1,4 +1,4 @@
-import { runFeedSync } from "@/lib/feedSync";
+import { runFeedSync } from "@/lib/profitbase/sync";
 import type { NextRequest } from "next/server";
 
 /**
@@ -9,7 +9,9 @@ import type { NextRequest } from "next/server";
 export async function GET(request: NextRequest) {
   try {
     const feedUrl =
-      request.nextUrl.searchParams.get("url") || process.env.FEED_URL;
+      request.nextUrl.searchParams.get("url") ||
+      process.env.FEED_URL ||
+      "file://feed.xml";
 
     if (!feedUrl) {
       return Response.json(

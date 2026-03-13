@@ -1,8 +1,8 @@
 "use client";
 
 import { useMemo } from "react";
-import type { TempoUnit } from "@/lib/getTempoData";
-import "../chess_primer.css";
+import type { TempoUnit } from "@/lib/chessboard/getTempoData";
+import "@/styles/chessboard.css";
 
 type Props = {
   units: TempoUnit[];

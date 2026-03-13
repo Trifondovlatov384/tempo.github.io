@@ -4,25 +4,35 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "npm run prisma:generate && next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "postinstall": "npm run prisma:generate",
+    "prisma:generate": "npx prisma@5.22.0 generate",
+    "seed": "npx tsx scripts/seed-db.ts"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "dependencies": {
     "@heroicons/react": "^2.0.18",
-    "mongodb": "^6.10.0",
+    "@prisma/client": "^5.22.0",
+    "mongodb": "^7.1.0",
     "next": "^15.0.0",
     "react": "^19.0.0-rc-66f6547d66-20241106",
     "react-dom": "^19.0.0-rc-66f6547d66-20241106",
     "xml2js": "^0.6.2"
   },
   "devDependencies": {
+    "dotenv": "^16.4.5",
+    "tsx": "^4.19.2",
     "@types/node": "^20.10.5",
     "@types/react": "^18.2.45",
     "@types/react-dom": "^18.2.18",
     "@types/xml2js": "^0.4.14",
     "autoprefixer": "^10.4.16",
     "postcss": "^8.4.31",
+    "prisma": "^5.22.0",
     "tailwindcss": "^3.4.1",
     "typescript": "^5.6.2"
   }

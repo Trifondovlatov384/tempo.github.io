@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { LeftSidebar } from "@/components/LeftSidebar";
 import "./globals.css";
-import "../chess_primer.css";
+import "@/styles/chessboard.css";
 import { Suspense } from "react";
 
 export const metadata: Metadata = {

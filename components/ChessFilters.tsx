@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronDownIcon } from "@heroicons/react/24/outline";
 import { INSTALLMENT_OPTIONS } from "@/lib/discountConfig";
-import type { TempoBuilding, TempoUnit } from "@/lib/getTempoData";
+import type { TempoBuilding, TempoUnit } from "@/lib/chessboard/getTempoData";
 
 type RoomType = "ст" | "1" | "2" | "3" | "4+";
 

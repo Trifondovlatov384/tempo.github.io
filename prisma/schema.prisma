@@ -1,0 +1,73 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("MONGODB_URI")
+}
+
+model Complex {
+  id      String   @id @default(auto()) @map("_id") @db.ObjectId
+  name    String?
+  feedUrl String?
+}
+
+model Building {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  rcId         String?
+  name         String?
+  handOverDate String?
+  isDelivered  Boolean?
+  chessOrderBy String?
+
+  @@map("buildings")
+}
+
+model Unit {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  rcId           String?  // Reference to Complex.id
+  buildingId     String?
+
+  number         String?
+  floor          Int?
+  type           String?
+  area           Float?
+  price          Float?
+  pricePerM2     Float?
+  view           String?
+  image          String?
+  status         String?
+  statusHumanized String? @map("status_humanized")
+
+  rooms          Int?
+  section        String?
+  hasSpecialOffer Boolean? @default(false)
+  layoutImage     String?
+
+  buildingName   String? @map("building_name")
+  building       String?
+  floorsTotal    Int?    @map("floors_total")
+
+  createdAt      DateTime?
+  updatedAt      DateTime?
+
+  @@index([rcId])
+  @@index([buildingId])
+  @@index([building])
+  @@index([building, section, floor, number])
+  @@map("units")
+}
+
+model FeedMetadata {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  sourceUrl     String
+  lastFetchedAt DateTime?
+  lastChangedAt DateTime?
+  lastHash      String?
+  lastStatus    String?
+  errorMessage  String?
+
+  @@map("feed_metadata")
+}
+

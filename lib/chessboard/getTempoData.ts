@@ -1,5 +1,5 @@
 import { cache } from "react";
-import { connectToDatabase } from "./mongodb";
+import { prisma } from "@/lib/db/prisma";
 
 export type TempoUnit = {
   id: string;
@@ -33,57 +33,49 @@ export type TempoComplex = {
 
 export const getTempoData = cache(async (): Promise<TempoComplex | null> => {
   try {
-    const { db } = await connectToDatabase();
+    const dbUnits = await prisma.unit.findMany({
+      orderBy: [{ floor: "desc" }, { number: "asc" }],
+    });
 
-    const dbUnits = await db
-      .collection("units")
-      .find({})
-      .sort({ floor: -1, number: 1 })
-      .toArray();
-
-    if (!dbUnits || dbUnits.length === 0) {
-      console.error("getTempoData: units collection is empty");
+    if (!dbUnits.length) {
       return null;
     }
 
     const buildingsMap = new Map<string, TempoBuilding>();
 
-    dbUnits.forEach((unit: any) => {
-      const buildingName = unit.building_name || unit.building || "Корпус 1";
-      const buildingId = unit.building_id?.toString?.() || buildingName;
+    for (const unit of dbUnits) {
+      const buildingName =
+        unit.buildingName ?? unit.building ?? "Корпус 1";
+      const buildingId = unit.buildingId ?? unit.building ?? buildingName;
 
       if (!buildingsMap.has(buildingName)) {
         buildingsMap.set(buildingName, {
           id: buildingId,
           name: buildingName,
-          floorsTotal: unit.floors_total || 25,
+          floorsTotal: unit.floorsTotal ?? 25,
           units: [],
         });
       }
 
       buildingsMap.get(buildingName)!.units.push({
-        id: unit._id?.toString() || `${buildingId}-${unit.number}`,
-        number: unit.number?.toString() || "0",
-        rooms: unit.rooms || 0,
-        floor: unit.floor || 1,
-        price: unit.price || 0,
-        area: unit.area || 0,
-        pricePerM2: unit.pricePerM2 || 0,
-        view: unit.view || "город",
-        section: unit.section || "A",
-        status: unit.status || "available",
-        statusHumanized: unit.status_humanized || "Свободно",
-        hasSpecialOffer: unit.hasSpecialOffer || false,
-        layoutImage: unit.layoutImage,
+        id: unit.id,
+        number: unit.number ?? "0",
+        rooms: unit.rooms ?? 0,
+        floor: unit.floor ?? 1,
+        price: unit.price ?? 0,
+        area: unit.area ?? 0,
+        pricePerM2: unit.pricePerM2 ?? 0,
+        view: unit.view ?? "город",
+        section: unit.section ?? "A",
+        status: unit.status ?? "available",
+        statusHumanized: unit.statusHumanized ?? "Свободно",
+        hasSpecialOffer: unit.hasSpecialOffer ?? false,
+        layoutImage: unit.layoutImage ?? undefined,
       });
-    });
+    }
 
     const buildings = Array.from(buildingsMap.values());
-
-    if (buildings.length === 0) {
-      console.error("getTempoData: no buildings constructed from units");
-      return null;
-    }
+    if (!buildings.length) return null;
 
     return {
       id: "tempo-nova",
@@ -99,9 +91,7 @@ export const getTempoData = cache(async (): Promise<TempoComplex | null> => {
 export const getBuildingByIndex = cache(
   async (index: number): Promise<TempoBuilding | null> => {
     const data = await getTempoData();
-    if (!data || !data.buildings[index]) {
-      return null;
-    }
+    if (!data || !data.buildings[index]) return null;
     return data.buildings[index];
   }
 );

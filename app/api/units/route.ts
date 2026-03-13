@@ -1,38 +1,37 @@
-import { connectToDatabase } from "@/lib/mongodb";
-import { runFeedSync } from "@/lib/feedSync";
+import { prisma } from "@/lib/db/prisma";
+import { runFeedSync } from "@/lib/profitbase/sync";
 import type { NextRequest } from "next/server";
 
+/**
+ * GET /api/units — список юнитов из БД (Prisma).
+ */
 export async function GET(_request: NextRequest) {
   try {
-    const { db } = await connectToDatabase();
+    const units = await prisma.unit.findMany({
+      orderBy: [{ floor: "desc" }, { number: "asc" }],
+    });
 
-    const units = await db
-      .collection("units")
-      .find({})
-      .sort({ floor: -1, number: 1 })
-      .toArray();
-
-    const unitsFormatted = units.map((unit: any) => ({
-      id: unit._id?.toString() || `unit-${unit.number}`,
-      number: unit.number?.toString() || "0",
-      floor: unit.floor || 1,
-      rooms: unit.rooms || 0,
-      price: unit.price || 0,
-      area: unit.area || 0,
-      pricePerM2: unit.pricePerM2 || 0,
-      view: unit.view || "город",
-      section: unit.section || "A",
-      status: unit.status || "available",
-      statusHumanized: unit.status_humanized || "Свободно",
-      hasSpecialOffer: unit.hasSpecialOffer || false,
-      layoutImage: unit.layoutImage,
-      building: unit.building || unit.building_name || "Корпус 1",
-      building_name: unit.building_name || unit.building || "Корпус 1",
-      building_id: unit.building_id || unit.building || "building-1",
-      floors_total: unit.floors_total || 25,
+    const formatted = units.map((unit) => ({
+      id: unit.id,
+      number: unit.number ?? "0",
+      floor: unit.floor ?? 1,
+      rooms: unit.rooms ?? 0,
+      price: unit.price ?? 0,
+      area: unit.area ?? 0,
+      pricePerM2: unit.pricePerM2 ?? 0,
+      view: unit.view ?? "город",
+      section: unit.section ?? "A",
+      status: unit.status ?? "available",
+      statusHumanized: unit.statusHumanized ?? "Свободно",
+      hasSpecialOffer: unit.hasSpecialOffer ?? false,
+      layoutImage: unit.layoutImage ?? undefined,
+      building: unit.buildingName ?? unit.building ?? "Корпус 1",
+      building_name: unit.buildingName ?? unit.building ?? "Корпус 1",
+      building_id: unit.buildingId ?? unit.building ?? "building-1",
+      floors_total: unit.floorsTotal ?? 25,
     }));
 
-    return Response.json(unitsFormatted);
+    return Response.json(formatted);
   } catch (error) {
     console.error("API Error:", error);
     return Response.json(
@@ -42,11 +41,14 @@ export async function GET(_request: NextRequest) {
   }
 }
 
-// POST to sync feed (parse and write only to MongoDB, как в real-estate)
+/**
+ * POST /api/units — синхронизация фида (FEED_URL из .env или body.feedUrl).
+ */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
-    const feedUrl = body.feedUrl ?? process.env.FEED_URL;
+    const feedUrl =
+      (body as { feedUrl?: string }).feedUrl ?? process.env.FEED_URL;
 
     if (!feedUrl) {
       return Response.json(

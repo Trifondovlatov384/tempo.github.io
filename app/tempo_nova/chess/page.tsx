@@ -1,38 +1,25 @@
-import { getTempoData } from "@/lib/getTempoData";
+import { getTempoData } from "@/lib/chessboard/getTempoData";
+import type { TempoComplex } from "@/lib/chessboard/getTempoData";
 import { ChessPageContent } from "@/components/ChessPageContent";
-import { SyncFeedButton } from "@/components/SyncFeedButton";
 import { Suspense } from "react";
 
 export const dynamic = "force-dynamic";
 
+const EMPTY_DATA: TempoComplex = {
+  id: "tempo-nova",
+  name: "ТЕМПО",
+  buildings: [{ id: "empty", name: "Корпус 1", floorsTotal: 0, units: [] }],
+};
+
 async function TempoNovaChessContent() {
+  let data: TempoComplex | null = null;
   try {
-    const data = await getTempoData();
-
-    if (!data || !data.buildings?.length) {
-      return (
-        <div className="flex flex-col items-center justify-center h-96 px-4">
-          <p className="text-[#2a515f]/50 text-center">
-            Нет данных для отображения. Загрузите фид кнопкой ниже или задайте
-            FEED_URL в .env и вызовите синхронизацию.
-          </p>
-          <SyncFeedButton variant="empty" />
-        </div>
-      );
-    }
-
-    return <ChessPageContent data={data} />;
+    data = await getTempoData();
   } catch (error) {
     console.error("Tempo Nova chess error:", error);
-    return (
-      <div className="flex items-center justify-center h-96">
-        <div className="text-center">
-          <p className="text-[#2a515f]/50 mb-4">Ошибка при загрузке данных</p>
-          <p className="text-sm text-[#2a515f]/30">{String(error)}</p>
-        </div>
-      </div>
-    );
   }
+  const displayData = data?.buildings?.length ? data : EMPTY_DATA;
+  return <ChessPageContent data={displayData} />;
 }
 
 export default function TempoNovaChessPage() {
