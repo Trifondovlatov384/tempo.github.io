@@ -1,7 +1,3 @@
-/**
- * Синк фида по расписанию (cron). 8:00–23:00, не чаще раза в 30 мин.
- * В crontab на VPS добавьте строку (каждые 30 мин): см. DEPLOY.md
- */
 import { runFeedSync } from "@/lib/profitbase/sync";
 import type { NextRequest } from "next/server";
 

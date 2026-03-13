@@ -39,8 +39,10 @@ git push -u origin main
 1. Подтяни последний код с GitHub (в нём исправлена ошибка сборки в cron и добавлен скрипт `seed`):
    ```bash
    cd /home/app/tempo-nova
-   git pull origin main
+   git fetch origin
+   git reset --hard origin/main
    ```
+   (`reset --hard` подтягивает точную копию с GitHub; .env не трогается.)
 2. Установи зависимости (в т.ч. tsx для seed):
    ```bash
    npm install
