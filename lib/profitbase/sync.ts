@@ -16,13 +16,13 @@ export type SyncResult = {
 const FEED_TIMEOUT_MS = 60000;
 const FEED_MAX_BYTES = 50 * 1024 * 1024; // 50 MB
 
-// Cipher suites, совместимые с TLS 1.2 (Profitbase может не принимать TLS 1.3)
+// Набор cipher suites для TLS 1.2 (как у программиста). Если не сработает — можно убрать или расширить.
 const TLS12_CIPHERS =
   "ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384";
 
 /**
- * Загрузка фида по URL через axios с принудительным TLS 1.2 и SNI
- * (обход SSL alert internal_error на VPS при обращении к Profitbase).
+ * Загрузка фида по URL — как сказал программист: axios с принудительным TLS 1.2 и SNI.
+ * Для теста: в .env задать FEED_INSECURE_SSL=1 чтобы отключить проверку сертификата (только для диагностики).
  */
 async function fetchFeedFromUrl(feedUrl: string): Promise<string> {
   const trimmed = feedUrl.trim();
@@ -33,10 +33,17 @@ async function fetchFeedFromUrl(feedUrl: string): Promise<string> {
     );
   }
 
-  const httpsAgent =
+  const rejectUnauthorized = process.env.FEED_INSECURE_SSL !== "1";
+  if (!rejectUnauthorized) {
+    console.warn(
+      "[feed] FEED_INSECURE_SSL=1: проверка сертификата отключена (только для теста)"
+    );
+  }
+
+  const agent =
     url.protocol === "https:"
       ? new https.Agent({
-          rejectUnauthorized: true,
+          rejectUnauthorized,
           minVersion: "TLSv1.2",
           maxVersion: "TLSv1.2",
           servername: url.hostname,
@@ -44,25 +51,37 @@ async function fetchFeedFromUrl(feedUrl: string): Promise<string> {
         })
       : undefined;
 
-  const response = await axios.get(trimmed, {
-    httpsAgent,
-    timeout: FEED_TIMEOUT_MS,
-    headers: {
-      Accept: "application/xml, text/xml, */*",
-      "User-Agent": "Mozilla/5.0 (compatible; NovaApp/1.0)",
-    },
-    maxContentLength: FEED_MAX_BYTES,
-    maxBodyLength: FEED_MAX_BYTES,
-    responseType: "text",
-    validateStatus: (status) => status >= 200 && status < 400,
-  });
+  try {
+    const response = await axios.get(trimmed, {
+      httpsAgent: agent,
+      timeout: FEED_TIMEOUT_MS,
+      headers: {
+        Accept: "application/xml, text/xml, */*",
+        "User-Agent": "Mozilla/5.0 (compatible; NovaApp/1.0)",
+      },
+      maxContentLength: FEED_MAX_BYTES,
+      maxBodyLength: FEED_MAX_BYTES,
+      responseType: "text",
+      validateStatus: (status) => status >= 200 && status < 400,
+    });
 
-  let text = typeof response.data === "string" ? response.data : String(response.data);
-  const firstTag = text.indexOf("<");
-  if (firstTag > 0) {
-    text = text.slice(firstTag);
+    let xml = typeof response.data === "string" ? response.data : String(response.data);
+    const firstTag = xml.indexOf("<");
+    if (firstTag > 0) {
+      xml = xml.slice(firstTag);
+    }
+    return xml;
+  } catch (error: unknown) {
+    const msg =
+      error && typeof error === "object" && "message" in error
+        ? String((error as Error).message)
+        : String(error);
+    const axiosErr = error as { response?: { status?: number }; code?: string } | undefined;
+    const status = axiosErr?.response?.status;
+    const code = axiosErr?.code ?? "";
+    const detail = status ? ` HTTP ${status}` : code ? ` ${code}` : "";
+    throw new Error(`Не удалось загрузить фид:${detail} ${msg}`);
   }
-  return text;
 }
 
 /**
