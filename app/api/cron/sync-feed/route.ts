@@ -1,3 +1,4 @@
+// Синк фида по расписанию. Crontab: см. DEPLOY.md
 import { runFeedSync } from "@/lib/profitbase/sync";
 import type { NextRequest } from "next/server";
 
