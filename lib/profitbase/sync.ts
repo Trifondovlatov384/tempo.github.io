@@ -1,4 +1,6 @@
 import { MongoClient } from "mongodb";
+import https from "https";
+import axios from "axios";
 import {
   parseProfitbaseXml,
   convertOffersToParsedFeed,
@@ -14,7 +16,14 @@ export type SyncResult = {
 const FEED_TIMEOUT_MS = 60000;
 const FEED_MAX_BYTES = 50 * 1024 * 1024; // 50 MB
 
-// Загрузка фида по URL — обычный fetch (референс: feed_help.txt). Таймаут 60 с, лимит 50 MB, Accept: application/xml, text/xml. Без axios и без кастомного HTTPS-агента.
+// Cipher suites, совместимые с TLS 1.2 (Profitbase может не принимать TLS 1.3)
+const TLS12_CIPHERS =
+  "ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384";
+
+/**
+ * Загрузка фида по URL через axios с принудительным TLS 1.2 и SNI
+ * (обход SSL alert internal_error на VPS при обращении к Profitbase).
+ */
 async function fetchFeedFromUrl(feedUrl: string): Promise<string> {
   const trimmed = feedUrl.trim();
   const url = new URL(trimmed);
@@ -24,75 +33,36 @@ async function fetchFeedFromUrl(feedUrl: string): Promise<string> {
     );
   }
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), FEED_TIMEOUT_MS);
+  const httpsAgent =
+    url.protocol === "https:"
+      ? new https.Agent({
+          rejectUnauthorized: true,
+          minVersion: "TLSv1.2",
+          maxVersion: "TLSv1.2",
+          servername: url.hostname,
+          ciphers: TLS12_CIPHERS,
+        })
+      : undefined;
 
-  const res = await fetch(trimmed, {
-    signal: controller.signal,
+  const response = await axios.get(trimmed, {
+    httpsAgent,
+    timeout: FEED_TIMEOUT_MS,
     headers: {
       Accept: "application/xml, text/xml, */*",
+      "User-Agent": "Mozilla/5.0 (compatible; NovaApp/1.0)",
     },
+    maxContentLength: FEED_MAX_BYTES,
+    maxBodyLength: FEED_MAX_BYTES,
+    responseType: "text",
+    validateStatus: (status) => status >= 200 && status < 400,
   });
-  clearTimeout(timeoutId);
 
-  if (!res.ok) {
-    throw new Error(`Feed HTTP ${res.status}`);
-  }
-
-  const contentLength = res.headers.get("content-length");
-  if (contentLength) {
-    const len = parseInt(contentLength, 10);
-    if (!Number.isNaN(len) && len > FEED_MAX_BYTES) {
-      throw new Error(
-        `Размер фида превышает лимит 50 MB: ${(len / 1024 / 1024).toFixed(1)} MB`
-      );
-    }
-  }
-
-  const reader = res.body?.getReader();
-  if (!reader) {
-    throw new Error("Нет тела ответа");
-  }
-
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (total + value.length > FEED_MAX_BYTES) {
-        reader.cancel();
-        throw new Error(
-          `Размер фида превышает лимит 50 MB (получено ≥ ${(total / 1024 / 1024).toFixed(1)} MB)`
-        );
-      }
-      chunks.push(value);
-      total += value.length;
-    }
-  } finally {
-    reader.releaseLock();
-  }
-
-  const decoder = new TextDecoder("utf-8");
-  const text = decoder.decode(
-    chunks.length === 1 ? chunks[0] : concatUint8Arrays(chunks)
-  );
+  let text = typeof response.data === "string" ? response.data : String(response.data);
   const firstTag = text.indexOf("<");
   if (firstTag > 0) {
-    return text.slice(firstTag);
+    text = text.slice(firstTag);
   }
   return text;
-}
-
-function concatUint8Arrays(arr: Uint8Array[]): Uint8Array {
-  const total = arr.reduce((s, a) => s + a.length, 0);
-  const out = new Uint8Array(total);
-  let offset = 0;
-  for (const a of arr) {
-    out.set(a, offset);
-    offset += a.length;
-  }
-  return out;
 }
 
 /**

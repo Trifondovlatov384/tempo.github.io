@@ -17,6 +17,7 @@
   "dependencies": {
     "@heroicons/react": "^2.0.18",
     "@prisma/client": "^5.22.0",
+    "axios": "^1.7.9",
     "mongodb": "^7.1.0",
     "next": "^15.0.0",
     "react": "^19.0.0-rc-66f6547d66-20241106",
