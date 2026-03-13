@@ -1,7 +1,6 @@
 /**
- * Вызов синка фида по расписанию (cron).
- * Работает только с 8:00 до 23:00; не чаще раза в 30 минут.
- * На VPS: */30 8-22 * * * curl -s http://localhost:3000/api/cron/sync-feed
+ * Синк фида по расписанию (cron). 8:00–23:00, не чаще раза в 30 мин.
+ * В crontab на VPS добавьте строку (каждые 30 мин): см. DEPLOY.md
  */
 import { runFeedSync } from "@/lib/profitbase/sync";
 import type { NextRequest } from "next/server";
@@ -11,7 +10,7 @@ let lastSyncTime = 0;
 
 function isInWindow(): boolean {
   const hour = new Date().getHours();
-  // 8:00 - 22:59 (cron */30 даст последний запуск в 22:30)
+  // 8:00 - 22:59; при запуске каждые 30 мин последний — в 22:30
   return hour >= 8 && hour < 23;
 }
 
