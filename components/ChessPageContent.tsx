@@ -65,6 +65,29 @@ export function ChessPageContent({ data }: Props) {
   const selectedBuildingEntry =
     buildingsWithUnits[currentBuildingIndex] ?? buildingsWithUnits[0];
 
+  // #region agent log
+  if (typeof window !== "undefined") {
+    fetch("http://127.0.0.1:7709/ingest/47cb9ce1-a5ce-4416-9486-0110e40bead6", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "7d6a34" },
+      body: JSON.stringify({
+        sessionId: "7d6a34",
+        location: "ChessPageContent.tsx",
+        message: "render",
+        data: {
+          dataBuildingsLength: data.buildings.length,
+          firstBuildingUnitsLength: data.buildings[0]?.units?.length ?? 0,
+          selectedUnitsLength: selectedBuildingEntry?.units?.length ?? 0,
+          hasActiveFilters,
+          currentBuildingIndex,
+        },
+        timestamp: Date.now(),
+        hypothesisId: "D_B",
+      }),
+    }).catch(() => {});
+  }
+  // #endregion
+
   type StatusStats = { total: number; available: number; sold: number; paidReservation: number; freeReservation: number };
   const statusStats = useMemo((): StatusStats => {
     const units = selectedBuildingEntry?.units ?? [];
