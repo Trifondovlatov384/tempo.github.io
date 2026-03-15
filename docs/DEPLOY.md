@@ -128,7 +128,7 @@ nano .env
 
 Заполните в `.env`:
 
-- **MONGODB_URI** — строка подключения к MongoDB Atlas (или своей MongoDB).  
+- **DATABASE_URL** — строка подключения к MongoDB Atlas (например `mongodb+srv://...@cluster0.xxxxx.mongodb.net/chess_nova?retryWrites=true&w=majority`).  
   В Atlas: Network Access → добавьте IP сервера (или 0.0.0.0/0 для теста).
 - **FEED_URL** — URL фида Profitbase, например:  
   `https://pb20127.profitbase.ru/export/profitbase_xml/35f50fe5ae463dd58596adaae32464a5`

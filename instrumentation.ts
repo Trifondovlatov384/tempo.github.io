@@ -11,8 +11,9 @@ export async function register() {
       const count = await prisma.unit.count();
       if (count > 0) return;
 
-      const feedUrl =
-        process.env.FEED_URL || "file://feed.xml";
+      const feedUrl = process.env.FEED_URL?.trim();
+      if (!feedUrl?.startsWith("http")) return;
+
       const { runFeedSync } = await import("./lib/profitbase/sync");
       const result = await runFeedSync(feedUrl);
       if (result.success) {

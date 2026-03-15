@@ -13,7 +13,7 @@ npm run prisma:generate   # если postinstall не сработал
 npm run dev
 ```
 
-В `.env` задайте `MONGODB_URI` и при необходимости `FEED_URL`.
+В `.env` задайте `DATABASE_URL` (подключение к MongoDB Atlas) и при необходимости `FEED_URL`.
 
 ## Заполнение БД из фида
 

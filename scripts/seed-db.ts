@@ -1,7 +1,7 @@
 /**
  * Заполняет БД из фида по URL.
  * Запуск: npm run seed
- * Требует в .env: MONGODB_URI и FEED_URL (https://...profitbase.ru/...).
+ * Требует в .env: DATABASE_URL и FEED_URL (https://...profitbase.ru/...).
  */
 import "dotenv/config";
 import { runFeedSync } from "../lib/profitbase/sync";

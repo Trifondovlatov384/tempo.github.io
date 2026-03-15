@@ -49,14 +49,18 @@ function fetchFeedViaSubprocess(feedUrl: string): string {
  * Синхронизация фида в БД. Один Profitbase: feedUrl из .env.
  * Загрузка фида — через subprocess (работает на VPS), запись — нативный MongoDB.
  */
+function getDbUri(): string | undefined {
+  return process.env.DATABASE_URL || process.env.MONGODB_URI;
+}
+
 export async function runFeedSync(feedUrl: string): Promise<SyncResult> {
-  const uri = process.env.MONGODB_URI;
+  const uri = getDbUri();
   if (!uri) {
     return {
       success: false,
       totalBuildings: 0,
       totalUnits: 0,
-      error: "MONGODB_URI не задан в .env",
+      error: "DATABASE_URL (или MONGODB_URI) не задан в .env",
     };
   }
 
