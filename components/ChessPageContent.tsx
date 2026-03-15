@@ -36,6 +36,14 @@ export function ChessPageContent({ data }: Props) {
   );
   const discountPercent = installmentOption?.discountPercent || 0;
 
+  const hasActiveFilters =
+    filters.rooms.length > 0 ||
+    filters.priceFrom !== null ||
+    filters.priceTo !== null ||
+    filters.areaFrom !== null ||
+    filters.areaTo !== null ||
+    filters.windowView.length > 0;
+
   const currentBuildingIndex = useMemo(() => {
     const buildingParam = searchParams.get("building");
     if (!buildingParam) return 0;
@@ -114,6 +122,7 @@ export function ChessPageContent({ data }: Props) {
                 units={selectedBuildingEntry.units}
                 discountPercent={discountPercent}
                 onUnitClick={setSelectedUnit}
+                hasActiveFilters={hasActiveFilters}
               />
             </div>
           )}

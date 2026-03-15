@@ -8,12 +8,14 @@ type Props = {
   units: TempoUnit[];
   discountPercent: number;
   onUnitClick: (unit: TempoUnit) => void;
+  hasActiveFilters?: boolean;
 };
 
 export function ChessBoard({
   units,
   discountPercent,
   onUnitClick,
+  hasActiveFilters = false,
 }: Props) {
   // Build unified chess grid
   const gridData = useMemo(() => {
@@ -52,7 +54,9 @@ export function ChessBoard({
   if (units.length === 0) {
     return (
       <div className="flex items-center justify-center h-96 text-[#2a515f]/50">
-        Нет апартаментов, соответствующих фильтрам
+        {hasActiveFilters
+          ? "Нет апартаментов, соответствующих фильтрам"
+          : "В этом корпусе пока нет апартаментов"}
       </div>
     );
   }

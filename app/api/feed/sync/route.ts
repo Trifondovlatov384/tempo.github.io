@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache";
 import { runFeedSync } from "@/lib/profitbase/sync";
 import type { NextRequest } from "next/server";
 
@@ -31,6 +32,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    revalidatePath("/");
+    revalidatePath("/tempo_nova");
+    revalidatePath("/tempo_nova/chess");
     return Response.json({
       success: true,
       totalBuildings: result.totalBuildings,
